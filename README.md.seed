@@ -1,0 +1,17 @@
+
+
+# TODO make a proper README.md out of this wall of text
+
+The `summarai` project combines two ideas:
+
+The `summarai` project is showcases how easy and quickly one can develop LLM applications
+using LLM dev support. We're using Visual Studio Code and the Claude Dev plugin (requires Anthropic API key and credits)
+in this case, to invoke local llamafile API:s, together with combinations of shell commands, to provide various types of
+summaries of files and content on a computer.
+
+Additionally, `summarai` showcases a simple use case of llamafile, an LLM packaging which allows inference at fair token rates
+using consumer hardware to complete meaningful tasks in isolated environments with higher information security requirements.
+
+This is the "seed" README.md from which we will grow the rest of this code fractal, using human instructions to Claude Dev.
+
+MIT license, will produce code with MINIMAL dependencies. Even making API calls should be done natively.
