@@ -6,10 +6,9 @@ import atexit
 import json
 import os
 import http.client
-import urllib.parse
-import ssl
 import shutil
 import secrets
+import sys
 
 
 def configure_logging(debug_enabled):
@@ -50,24 +49,58 @@ class LlamafileClient:
         self.logger.error("Llamafile executable not found in PATH, current directory, or LLAMAFILE environment variable.")
         raise FileNotFoundError("Llamafile executable not found.")
 
-    def start_llamafile(self):
+    def start_llamafile(self, daemon=False):
         cmd = f"{self.executable_path} --api-key {self.api_key}"
         self.logger.debug(f"Starting llamafile with command: {cmd}")
         try:
-            self.process = subprocess.Popen(
-                cmd,
-                shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            atexit.register(self.stop_llamafile)
-            self.logger.debug("Waiting for llamafile to start...")
-            self._wait_for_server()
-            self.logger.debug("Llamafile started successfully")
+            if daemon:
+                self._start_daemon(cmd)
+            else:
+                self.process = subprocess.Popen(
+                    cmd,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                atexit.register(self.stop_llamafile)
+                self.logger.debug("Waiting for llamafile to start...")
+                self._wait_for_server()
+                self.logger.debug("Llamafile started successfully")
         except Exception as e:
             self.logger.exception("Error starting llamafile")
             raise
+
+    def _start_daemon(self, cmd):
+        pid = os.fork()
+        if pid > 0:
+            os._exit(0)  # Exit first parent
+
+        os.chdir("/")
+        os.setsid()
+        os.umask(0)
+
+        pid = os.fork()  # Do second fork
+        if pid > 0:
+            os._exit(0)  # Exit from second parent
+
+        sys.stdout.flush()
+        sys.stderr.flush()
+
+        with open('/dev/null', 'rb', 0) as f:
+            os.dup2(f.fileno(), sys.stdin.fileno())
+        with open('/dev/null', 'ab', 0) as f:
+            os.dup2(f.fileno(), sys.stdout.fileno())
+            os.dup2(f.fileno(), sys.stderr.fileno())
+
+        self.process = subprocess.Popen(
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        self.logger.debug("Daemon process started")
 
     def _wait_for_server(self, timeout=60, check_interval=1):
         start_time = time.time()
@@ -121,6 +154,9 @@ class LlamafileClient:
         }).encode('utf-8')
 
         self.logger.debug(f"Sending chat completion request to {self.host}:{self.port}/v1/chat/completions")
+        self.logger.debug(f"Request headers: {headers}")
+        self.logger.debug(f"Request body: {data}")
+
         try:
             conn = http.client.HTTPConnection(self.host, self.port)
             conn.request("POST", "/v1/chat/completions", body=data, headers=headers)
@@ -129,7 +165,11 @@ class LlamafileClient:
             if response.status != 200:
                 raise Exception(f"Error: {response.status}, {response.read().decode('utf-8')}")
 
-            return json.loads(response.read().decode('utf-8'))
+            response_data = response.read().decode('utf-8')
+            self.logger.debug(f"Response status: {response.status}")
+            self.logger.debug(f"Response body: {response_data}")
+
+            return json.loads(response_data)
         except Exception as e:
             self.logger.error(f"Error in chat completion request: {str(e)}")
             raise
@@ -137,11 +177,27 @@ class LlamafileClient:
             conn.close()
 
 
+def check_server_status():
+    try:
+        conn = http.client.HTTPConnection("localhost", 8080)
+        conn.request("GET", "/v1/models")
+        response = conn.getresponse()
+        if response.status == 200:
+            print("running")
+        else:
+            print("not running")
+    except Exception as e:
+        print("not running")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Llamafile API Client")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
     parser.add_argument("-p", "--prompt", help="Custom prompt for summarization", default="Summarize the following content:")
-    parser.add_argument("files", nargs="+", help="Files to summarize")
+    parser.add_argument("--service", action="store_true", help="Run llamafile as a service")
+    parser.add_argument("--stop", action="store_true", help="Stop the running llamafile service")
+    parser.add_argument("--status", action="store_true", help="Check if the llamafile service is running")
+    parser.add_argument("files", nargs="*", help="Files to summarize")
     args = parser.parse_args()
 
     configure_logging(args.debug)
@@ -149,23 +205,38 @@ def main():
 
     try:
         client = LlamafileClient()
-        client.start_llamafile()
-        
-        for file in args.files:
-            with open(file, 'r') as f:
-                content = f.read()
-            messages = [{"role": "user", "content": f"{args.prompt}\n\n{content}"}]
-            response = client.chat_completion(messages)
-            # Print only the content part of the response
-            content_response = response.get("choices", [])[0].get("message", {}).get("content", "No content in response")
-            print(content_response)
+
+        if args.stop:
+            client.stop_llamafile()
+            logger.info("Llamafile service stopped")
+            return
+
+        if args.status:
+            check_server_status()
+            return
+
+        if args.service:
+            client.start_llamafile(daemon=True)
+            logger.info("Llamafile running as a service")
+            return
+
+        if args.files:
+            client.start_llamafile()
+
+            for file in args.files:
+                with open(file, 'r') as f:
+                    content = f.read()
+                messages = [{"role": "user", "content": f"{args.prompt}\n\n{content}"}]
+                response = client.chat_completion(messages)
+                content_response = response.get("choices", [])[0].get("message", {}).get("content", "No content in response")
+                print(content_response)
     except FileNotFoundError as e:
         logger.error(f"Error: {str(e)}")
         print(f"Error: {str(e)}")
     except Exception as e:
         logger.exception("An error occurred")
     finally:
-        if 'client' in locals():
+        if 'client' in locals() and not args.service:
             client.stop_llamafile()
 
 if __name__ == "__main__":

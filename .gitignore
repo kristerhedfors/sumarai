@@ -53,3 +53,6 @@ Thumbs.db
 *.bak
 *.tmp
 *.temp
+
+# Include files with suffix 'llamafile'
+*.llamafile
