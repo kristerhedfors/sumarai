@@ -1,0 +1,172 @@
+import logging
+import argparse
+import subprocess
+import time
+import atexit
+import json
+import os
+import http.client
+import urllib.parse
+import ssl
+import shutil
+import secrets
+
+
+def configure_logging(debug_enabled):
+    level = logging.DEBUG if debug_enabled else logging.INFO
+    logging.basicConfig(level=level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+
+class LlamafileClient:
+    def __init__(self, executable_path=None, api_key=None, host="localhost", port=8080):
+        self.logger = logging.getLogger(__name__)
+        self.executable_path = self._find_executable(executable_path)
+        self.api_key = api_key if api_key else secrets.token_hex(16)
+        self.host = host
+        self.port = port
+        self.process = None
+
+    def _find_executable(self, executable_path):
+        if executable_path:
+            if os.path.isfile(executable_path):
+                return executable_path
+            self.logger.warning(f"Specified executable path {executable_path} not found.")
+
+        # Search in PATH
+        path_executable = shutil.which('llamafile')
+        if path_executable:
+            return path_executable
+
+        # Search in current directory
+        current_dir_executable = os.path.join(os.getcwd(), 'llamafile')
+        if os.path.isfile(current_dir_executable):
+            return current_dir_executable
+
+        # Search in LLAMAFILE environment variable
+        env_executable = os.environ.get('LLAMAFILE')
+        if env_executable and os.path.isfile(env_executable):
+            return env_executable
+
+        self.logger.error("Llamafile executable not found in PATH, current directory, or LLAMAFILE environment variable.")
+        raise FileNotFoundError("Llamafile executable not found.")
+
+    def start_llamafile(self):
+        cmd = f"{self.executable_path} --api-key {self.api_key}"
+        self.logger.debug(f"Starting llamafile with command: {cmd}")
+        try:
+            self.process = subprocess.Popen(
+                cmd,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            atexit.register(self.stop_llamafile)
+            self.logger.debug("Waiting for llamafile to start...")
+            self._wait_for_server()
+            self.logger.debug("Llamafile started successfully")
+        except Exception as e:
+            self.logger.exception("Error starting llamafile")
+            raise
+
+    def _wait_for_server(self, timeout=60, check_interval=1):
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                conn = http.client.HTTPConnection(self.host, self.port)
+                conn.request("GET", "/v1/models")
+                response = conn.getresponse()
+                if response.status == 200:
+                    self.logger.debug("Server is ready")
+                    conn.close()
+                    return
+            except Exception as e:
+                pass
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+            if self.process.poll() is not None:
+                stdout, stderr = self.process.communicate()
+                self.logger.error(f"Llamafile process exited unexpectedly. Exit code: {self.process.returncode}")
+                self.logger.error(f"stdout: {stdout}")
+                self.logger.error(f"stderr: {stderr}")
+                raise Exception("Llamafile failed to start")
+
+            time.sleep(check_interval)
+
+        raise TimeoutError("Server did not become ready within the timeout period")
+
+    def stop_llamafile(self):
+        if self.process:
+            self.logger.debug("Stopping llamafile process")
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.logger.warning("Llamafile process did not terminate, forcing kill")
+                self.process.kill()
+            self.logger.debug("Llamafile process stopped")
+
+    def chat_completion(self, messages, model="local-model"):
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        data = json.dumps({
+            "model": model,
+            "messages": messages
+        }).encode('utf-8')
+
+        self.logger.debug(f"Sending chat completion request to {self.host}:{self.port}/v1/chat/completions")
+        try:
+            conn = http.client.HTTPConnection(self.host, self.port)
+            conn.request("POST", "/v1/chat/completions", body=data, headers=headers)
+            response = conn.getresponse()
+
+            if response.status != 200:
+                raise Exception(f"Error: {response.status}, {response.read().decode('utf-8')}")
+
+            return json.loads(response.read().decode('utf-8'))
+        except Exception as e:
+            self.logger.error(f"Error in chat completion request: {str(e)}")
+            raise
+        finally:
+            conn.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Llamafile API Client")
+    parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    parser.add_argument("-p", "--prompt", help="Custom prompt for summarization", default="Summarize the following content:")
+    parser.add_argument("files", nargs="+", help="Files to summarize")
+    args = parser.parse_args()
+
+    configure_logging(args.debug)
+    logger = logging.getLogger(__name__)
+
+    try:
+        client = LlamafileClient()
+        client.start_llamafile()
+        
+        for file in args.files:
+            with open(file, 'r') as f:
+                content = f.read()
+            messages = [{"role": "user", "content": f"{args.prompt}\n\n{content}"}]
+            response = client.chat_completion(messages)
+            # Print only the content part of the response
+            content_response = response.get("choices", [])[0].get("message", {}).get("content", "No content in response")
+            print(content_response)
+    except FileNotFoundError as e:
+        logger.error(f"Error: {str(e)}")
+        print(f"Error: {str(e)}")
+    except Exception as e:
+        logger.exception("An error occurred")
+    finally:
+        if 'client' in locals():
+            client.stop_llamafile()
+
+if __name__ == "__main__":
+    main()
