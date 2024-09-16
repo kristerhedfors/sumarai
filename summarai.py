@@ -143,14 +143,15 @@ class LlamafileClient:
                 self.process.kill()
             self.logger.debug("Llamafile process stopped")
 
-    def chat_completion(self, messages, model="local-model"):
+    def chat_completion(self, messages, model="local-model", stream=False):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         data = json.dumps({
             "model": model,
-            "messages": messages
+            "messages": messages,
+            "stream": stream
         }).encode('utf-8')
 
         self.logger.debug(f"Sending chat completion request to {self.host}:{self.port}/v1/chat/completions")
@@ -165,16 +166,19 @@ class LlamafileClient:
             if response.status != 200:
                 raise Exception(f"Error: {response.status}, {response.read().decode('utf-8')}")
 
-            response_data = response.read().decode('utf-8')
-            self.logger.debug(f"Response status: {response.status}")
-            self.logger.debug(f"Response body: {response_data}")
-
-            return json.loads(response_data)
+            if stream:
+                return response
+            else:
+                response_data = response.read().decode('utf-8')
+                self.logger.debug(f"Response status: {response.status}")
+                self.logger.debug(f"Response body: {response_data}")
+                return json.loads(response_data)
         except Exception as e:
             self.logger.error(f"Error in chat completion request: {str(e)}")
             raise
         finally:
-            conn.close()
+            if not stream:
+                conn.close()
 
 
 def check_server_status():
@@ -188,6 +192,69 @@ def check_server_status():
             print("not running")
     except Exception as e:
         print("not running")
+
+
+def interactive_shell(client):
+    print("Welcome to the interactive shell. Type 'help' for available commands or 'exit' to quit.")
+    conversation_history = [
+        {"role": "system", "content": "You are a helpful AI assistant. Respond to the user's queries concisely and accurately."}
+    ]
+
+    def print_help():
+        print("Available commands:")
+        print("  help    - Show this help message")
+        print("  clear   - Clear the conversation history")
+        print("  exit    - Exit the interactive shell")
+
+    while True:
+        try:
+            user_input = input("You: ").strip()
+            if user_input.lower() == 'exit':
+                print("Exiting interactive shell.")
+                break
+            elif user_input.lower() == 'help':
+                print_help()
+                continue
+            elif user_input.lower() == 'clear':
+                conversation_history = [conversation_history[0]]  # Keep only the system message
+                print("Conversation history cleared.")
+                continue
+
+            conversation_history.append({"role": "user", "content": user_input})
+            response = client.chat_completion(conversation_history, stream=True)
+
+            print("AI: ", end="", flush=True)
+            buffer = ""
+            ai_response = ""
+            for line in response:
+                buffer += line.decode('utf-8')
+                if buffer.endswith('\n'):
+                    try:
+                        chunks = buffer.split('\n')
+                        for chunk in chunks:
+                            if chunk.startswith('data: '):
+                                data = json.loads(chunk[6:])
+                                if 'choices' in data and len(data['choices']) > 0:
+                                    delta = data['choices'][0].get('delta', {})
+                                    if 'content' in delta:
+                                        content = delta['content']
+                                        ai_response += content
+                                        print(content, end="", flush=True)
+                                    if data['choices'][0].get('finish_reason') is not None:
+                                        print()  # New line after the response
+                                        break
+                        buffer = ""
+                    except json.JSONDecodeError:
+                        # Incomplete JSON, keep in buffer
+                        continue
+
+            conversation_history.append({"role": "assistant", "content": ai_response})
+
+        except KeyboardInterrupt:
+            print("\nExiting interactive shell.")
+            break
+        except Exception as e:
+            print(f"An error occurred: {str(e)}")
 
 
 def main():
@@ -220,7 +287,10 @@ def main():
             logger.info("Llamafile running as a service")
             return
 
-        if args.files:
+        if not args.files:
+            client.start_llamafile()
+            interactive_shell(client)
+        else:
             client.start_llamafile()
 
             for file in args.files:
