@@ -55,4 +55,5 @@ Thumbs.db
 *.temp
 
 # Include files with suffix 'llamafile'
-*.llamafilellamafile
+*.llamafile
+*llamafile*
