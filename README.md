@@ -134,6 +134,44 @@ The `summarai` project is particularly useful for:
 4. Projects requiring secure, isolated LLM solutions with minimal dependencies
 5. Users who want to interact with an AI model through a simple command-line interface
 
+## Running Tests
+
+The `summarai` project uses pytest for testing. To run the tests, follow these steps:
+
+1. Ensure you have pytest installed. If not, you can install it using pip:
+   ```
+   pip install pytest
+   ```
+
+2. Navigate to the project root directory:
+   ```
+   cd /path/to/summarai
+   ```
+
+3. Run the tests using pytest:
+   ```
+   pytest
+   ```
+
+   This command will discover and run all test files in the project.
+
+4. For more verbose output, you can use:
+   ```
+   pytest -v
+   ```
+
+5. To run a specific test file, you can specify the file path:
+   ```
+   pytest test/test_summarai_pytest.py
+   ```
+
+6. To run a specific test function, you can use the following format:
+   ```
+   pytest test/test_summarai_pytest.py::test_function_name
+   ```
+
+Please note that some tests may require a running llamafile process. These tests are marked with `@pytest.mark.skip(reason="This test requires a running llamafile process")` and will be skipped by default. To run these tests, ensure you have a llamafile process running and remove the skip decorator.
+
 ## Future Development
 
 This project serves as a starting point for further exploration and development in the field of AI-assisted, no-code LLM applications. We welcome contributions and ideas to expand its capabilities and use cases while maintaining the zero-dependencies philosophy and the no-code development approach.
