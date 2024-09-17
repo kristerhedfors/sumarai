@@ -70,9 +70,16 @@ By using only built-in modules, we ensure that the client can run on any system 
    cd sumarai
    ```
 
-2. Ensure you have the llamafile executable. You can either:
+2. Download and set up the llamafile:
+   ```
+   wget https://huggingface.co/Mozilla/Meta-Llama-3.1-8B-Instruct-llamafile/resolve/main/Meta-Llama-3.1-8B-Instruct.Q6_K.llamafile
+   mv Meta-Llama-3.1-8B-Instruct.Q6_K.llamafile llamafile
+   chmod +x llamafile
+   ```
+
+3. Ensure you have the llamafile executable. You can either:
    - Place it in your system's PATH
-   - Put it in the current working directory
+   - Keep it in the current working directory
    - Set the LLAMAFILE environment variable to point to its location
 
 ### Usage

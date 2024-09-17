@@ -35,12 +35,44 @@ type LlamafileClient struct {
 	process        *os.Process
 }
 
+func findExecutable() (string, error) {
+	// Search in LLAMAFILE environment variable first
+	envExecutable := os.Getenv("LLAMAFILE")
+	fmt.Printf("Debug: Checking LLAMAFILE environment variable: %s\n", envExecutable)
+	if envExecutable != "" {
+		if _, err := os.Stat(envExecutable); err == nil {
+			return envExecutable, nil
+		}
+	}
+
+	// Search in PATH
+	pathExecutable, err := exec.LookPath("llamafile")
+	fmt.Printf("Debug: Checking PATH for llamafile executable: %s\n", pathExecutable)
+	if err == nil {
+		return pathExecutable, nil
+	}
+
+	// Search in current directory
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("error getting current directory: %v", err)
+	}
+	currentDirExecutable := filepath.Join(currentDir, "llamafile")
+	fmt.Printf("Debug: Checking current directory for llamafile executable: %s\n", currentDirExecutable)
+	if _, err := os.Stat(currentDirExecutable); err == nil {
+		return currentDirExecutable, nil
+	}
+
+	return "", fmt.Errorf("llamafile executable not found in LLAMAFILE environment variable, PATH, or current directory")
+}
+
 func NewLlamafileClient(executablePath string, apiKey string, host string, port int) (*LlamafileClient, error) {
+	fmt.Printf("Debug: Creating LlamafileClient with ExecutablePath: %s\n", executablePath)
+	var err error
 	if executablePath == "" {
-		var err error
 		executablePath, err = findExecutable()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to find llamafile executable: %v", err)
 		}
 	}
 
@@ -63,30 +95,6 @@ func generateAPIKey() string {
 		logger.Fatalf("Error generating API key: %v", err)
 	}
 	return hex.EncodeToString(b)
-}
-
-func findExecutable() (string, error) {
-	// Search in PATH
-	pathExecutable, err := exec.LookPath("llamafile")
-	if err == nil {
-		return pathExecutable, nil
-	}
-
-	// Search in current directory
-	currentDirExecutable := filepath.Join(".", "llamafile")
-	if _, err := os.Stat(currentDirExecutable); err == nil {
-		return currentDirExecutable, nil
-	}
-
-	// Search in LLAMAFILE environment variable
-	envExecutable := os.Getenv("LLAMAFILE")
-	if envExecutable != "" {
-		if _, err := os.Stat(envExecutable); err == nil {
-			return envExecutable, nil
-		}
-	}
-
-	return "", fmt.Errorf("Llamafile executable not found in PATH, current directory, or LLAMAFILE environment variable")
 }
 
 func (c *LlamafileClient) StartLlamafile(daemon bool) error {
@@ -312,13 +320,28 @@ func main() {
 
 	configureLogging(debugEnabled)
 
+	if !runAsService && !stop && !checkStatus && len(files) == 0 {
+		client, err := NewLlamafileClient("", "", "localhost", 8080)
+		if err != nil {
+			logger.Fatalf("Error creating LlamafileClient: %v", err)
+		}
+
+		defer client.StopLlamafile()
+		err = client.StartLlamafile(false)
+		if err != nil {
+			logger.Fatalf("Error starting Llamafile: %v", err)
+		}
+		interactiveShell(client)
+		return
+	}
+
 	client, err := NewLlamafileClient("", "", "localhost", 8080)
 	if err != nil {
 		logger.Fatalf("Error creating LlamafileClient: %v", err)
 	}
 
 	if stop {
-		err := client.StopLlamafile()
+		err = client.StopLlamafile()
 		if err != nil {
 			logger.Fatalf("Error stopping Llamafile service: %v", err)
 		}
@@ -332,7 +355,7 @@ func main() {
 	}
 
 	if runAsService {
-		err := client.StartLlamafile(true)
+		err = client.StartLlamafile(true)
 		if err != nil {
 			logger.Fatalf("Error starting Llamafile service: %v", err)
 		}
@@ -340,47 +363,37 @@ func main() {
 		return
 	}
 
-	err = client.StartLlamafile(false)
-	if err != nil {
-		logger.Fatalf("Error starting Llamafile: %v", err)
-	}
-	defer client.StopLlamafile()
-
-	if len(files) == 0 {
-		interactiveShell(client)
-	} else {
-		for _, file := range files {
-			content, err := ioutil.ReadFile(file)
-			if err != nil {
-				logger.Printf("Error reading file %s: %v", file, err)
-				continue
-			}
-			messages := []map[string]string{
-				{"role": "user", "content": fmt.Sprintf("%s\n\n%s", prompt, string(content))},
-			}
-			response, err := client.ChatCompletion(messages, "local-model", false)
-			if err != nil {
-				logger.Printf("Error in chat completion for file %s: %v", file, err)
-				continue
-			}
-			defer response.Close()
-			body, err := ioutil.ReadAll(response)
-			if err != nil {
-				logger.Printf("Error reading response for file %s: %v", file, err)
-				continue
-			}
-			var result map[string]interface{}
-			err = json.Unmarshal(body, &result)
-			if err != nil {
-				logger.Printf("Error parsing response for file %s: %v", file, err)
-				continue
-			}
-			if choices, ok := result["choices"].([]interface{}); ok && len(choices) > 0 {
-				if choice, ok := choices[0].(map[string]interface{}); ok {
-					if message, ok := choice["message"].(map[string]interface{}); ok {
-						if content, ok := message["content"].(string); ok {
-							fmt.Println(content)
-						}
+	for _, file := range files {
+		content, err := ioutil.ReadFile(file)
+		if err != nil {
+			logger.Printf("Error reading file %s: %v", file, err)
+			continue
+		}
+		messages := []map[string]string{
+			{"role": "user", "content": fmt.Sprintf("%s\n\n%s", prompt, string(content))},
+		}
+		response, err := client.ChatCompletion(messages, "local-model", false)
+		if err != nil {
+			logger.Printf("Error in chat completion for file %s: %v", file, err)
+			continue
+		}
+		defer response.Close()
+		body, err := ioutil.ReadAll(response)
+		if err != nil {
+			logger.Printf("Error reading response for file %s: %v", file, err)
+			continue
+		}
+		var result map[string]interface{}
+		err = json.Unmarshal(body, &result)
+		if err != nil {
+			logger.Printf("Error parsing response for file %s: %v", file, err)
+			continue
+		}
+		if choices, ok := result["choices"].([]interface{}); ok && len(choices) > 0 {
+			if choice, ok := choices[0].(map[string]interface{}); ok {
+				if message, ok := choice["message"].(map[string]interface{}); ok {
+					if content, ok := message["content"].(string); ok {
+						fmt.Println(content)
 					}
 				}
 			}
