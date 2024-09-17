@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `summarai` project is a demonstration of rapid LLM application development using advanced dev support tools. It showcases the power of combining Visual Studio Code with the Claude Dev plugin (requires Anthropic API key and credits) to interact with local llamafile APIs, alongside various shell commands. The primary goal is to provide different types of summaries for files and content on a computer.
+The `summarai` project is a demonstration of rapid LLM application development using advanced dev support tools. It showcases the power of combining Visual Studio Code with the Claude Dev plugin (requires Anthropic API key and credits) to interact with local llamafile APIs, alongside various shell commands. The primary goal is to provide different types of summaries for files and content on a computer, as well as an interactive chat interface.
 
 ## Key Features
 
@@ -13,6 +13,7 @@ The `summarai` project is a demonstration of rapid LLM application development u
    - Enhanced information security for sensitive applications
 3. **Zero-Dependencies Philosophy**: The project adheres to the llamafile zero-dependencies approach, using only the Python standard library for all functionality.
 4. **Flexible Executable Discovery**: Automatically locates the llamafile executable using a smart search algorithm.
+5. **Interactive Shell**: Provides an interactive chat interface for real-time communication with the AI model.
 
 ## Technology Stack
 
@@ -54,16 +55,46 @@ By using only built-in Python modules, we ensure that the client can run on any 
 
 ### Usage
 
-Run the script with a message:
+There are two main ways to use the summarai script:
 
-```
-python summarai.py --message "Your message here"
-```
+1. **Interactive Shell Mode:**
+
+   Run the script without any arguments to start the interactive shell:
+
+   ```
+   python summarai.py
+   ```
+
+   This will launch an interactive chat interface where you can communicate with the AI model in real-time. Available commands in the interactive shell:
+   - `help`: Show available commands
+   - `clear`: Clear the conversation history
+   - `exit`: Exit the interactive shell
+
+2. **File Summarization Mode:**
+
+   To summarize one or more files:
+
+   ```
+   python summarai.py file1.txt file2.txt
+   ```
+
+   You can also specify a custom prompt for summarization:
+
+   ```
+   python summarai.py --prompt "Provide a detailed analysis of:" file.txt
+   ```
+
+Additional options:
+
+- `--debug`: Enable debug output
+- `--service`: Run llamafile as a service
+- `--stop`: Stop the running llamafile service
+- `--status`: Check if the llamafile service is running
 
 If you want to specify a custom path for the llamafile executable:
 
 ```
-python summarai.py --executable /path/to/llamafile --message "Your message here"
+python summarai.py --executable /path/to/llamafile [other options]
 ```
 
 ## Llamafile Executable Search Order
@@ -85,6 +116,7 @@ The `summarai` project is particularly useful for:
 2. Organizations requiring secure, isolated LLM solutions
 3. Researchers exploring efficient LLM deployment on consumer hardware
 4. Projects needing a lightweight, portable LLM client implementation
+5. Users who want to interact with an AI model through a simple command-line interface
 
 ## Future Development
 
