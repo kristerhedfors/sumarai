@@ -1,5 +1,7 @@
 # summarai
 
+**IMPORTANT NOTE: This project is primarily generated through AI assistance. Only the file `README.md.human` is human-written. All other files, including this README.md, are prompt-generated using the VSCode plugin Claude Dev and primarily the latest Anthropic Sonnet model.**
+
 ## Overview
 
 The `summarai` project is a demonstration of rapid LLM application development using advanced dev support tools. It showcases the power of combining Visual Studio Code with the Claude Dev plugin (requires Anthropic API key and credits) to interact with local llamafile APIs, alongside various shell commands. The primary goal is to provide different types of summaries for files and content on a computer, as well as an interactive chat interface.
