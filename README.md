@@ -4,11 +4,25 @@
 
 ## Overview
 
-The `summarai` project is a demonstration of rapid LLM application development using advanced dev support tools. It showcases the power of combining Visual Studio Code with the Claude Dev plugin (requires Anthropic API key and credits) to interact with local llamafile APIs, alongside various shell commands. The primary goal is to provide different types of summaries for files and content on a computer, as well as an interactive chat interface.
+The `summarai` project is a demonstration of rapid LLM application development using a strict no-code workflow. It showcases the power of combining Visual Studio Code with the Claude Dev plugin (requires Anthropic API key and credits) to create a functional application through natural language prompting alone. The primary goal is to provide different types of summaries for files and content on a computer, as well as an interactive chat interface, all without writing a single line of code manually.
+
+## Development Approach
+
+This project employs a unique development methodology:
+
+1. **No-Code Workflow**: The entire application is developed without manually writing any code. Instead, all code is generated through natural language prompts.
+
+2. **Conversational Prompting**: The development process mimics a conversation with a skilled developer colleague. By describing features, requirements, and necessary changes in natural language, the AI assistant (Claude Dev) generates and modifies the codebase accordingly.
+
+3. **Rapid Iteration**: This approach allows for quick iterations and adjustments, as changes can be requested and implemented through simple conversational prompts.
+
+4. **AI-Driven Problem Solving**: Complex programming challenges are solved by leveraging the AI's vast knowledge of programming patterns, best practices, and problem-solving techniques.
+
+This methodology demonstrates the potential of AI-assisted development in dramatically reducing the time and technical expertise required to create functional applications.
 
 ## Key Features
 
-1. **Rapid LLM Application Development**: Demonstrates the ease and speed of developing LLM applications with modern tools.
+1. **Rapid LLM Application Development**: Demonstrates the ease and speed of developing LLM applications with AI assistance.
 2. **llamafile Showcase**: Highlights the capabilities of llamafile, an LLM packaging solution that enables:
    - Inference at competitive token rates using consumer hardware
    - Completion of meaningful tasks in isolated environments
@@ -114,15 +128,15 @@ This flexible approach ensures that the script can find the llamafile executable
 
 The `summarai` project is particularly useful for:
 
-1. Developers looking to understand LLM application development workflows with minimal dependencies
-2. Organizations requiring secure, isolated LLM solutions
-3. Researchers exploring efficient LLM deployment on consumer hardware
-4. Projects needing a lightweight, portable LLM client implementation
+1. Developers exploring AI-assisted, no-code application development workflows
+2. Organizations seeking to rapidly prototype and develop applications with minimal manual coding
+3. Researchers studying the capabilities and limitations of AI-driven software development
+4. Projects requiring secure, isolated LLM solutions with minimal dependencies
 5. Users who want to interact with an AI model through a simple command-line interface
 
 ## Future Development
 
-This project serves as a starting point for further exploration and development in the field of LLM applications, emphasizing minimal dependencies and standard library usage. We welcome contributions and ideas to expand its capabilities and use cases while maintaining the zero-dependencies philosophy.
+This project serves as a starting point for further exploration and development in the field of AI-assisted, no-code LLM applications. We welcome contributions and ideas to expand its capabilities and use cases while maintaining the zero-dependencies philosophy and the no-code development approach.
 
 ## License
 
