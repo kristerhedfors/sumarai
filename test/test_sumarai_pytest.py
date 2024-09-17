@@ -11,7 +11,7 @@ import shutil
 # Add the parent directory to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from summarai import LlamafileClient
+from sumarai import LlamafileClient
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)

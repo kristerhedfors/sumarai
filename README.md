@@ -1,10 +1,10 @@
-# summarai
+# sumarai
 
 **IMPORTANT NOTE: This project is primarily generated through AI assistance. Only the file `README.md.human` is human-written. All other files, including this README.md, are prompt-generated using the VSCode plugin Claude Dev and primarily the latest Anthropic Sonnet model.**
 
 ## Overview
 
-The `summarai` project is a demonstration of rapid LLM application development using a strict no-code workflow. It showcases the power of combining Visual Studio Code with the Claude Dev plugin (requires Anthropic API key and credits) to create a functional application through natural language prompting alone. The primary goal is to provide different types of summaries for files and content on a computer, as well as an interactive chat interface, all without writing a single line of code manually.
+The `sumarai` project is a demonstration of rapid LLM application development using a strict no-code workflow. It showcases the power of combining Visual Studio Code with the Claude Dev plugin (requires Anthropic API key and credits) to create a functional application through natural language prompting alone. The primary goal is to provide different types of summaries for files and content on a computer, as well as an interactive chat interface, all without writing a single line of code manually.
 
 ## Development Approach
 
@@ -46,7 +46,7 @@ This methodology demonstrates the potential of AI-assisted development in dramat
 
 ## Zero-Dependencies Approach
 
-The `summarai` project, including both `summarai.py` and `summarai.go`, has been implemented using only the standard libraries of their respective languages. This approach aligns with the llamafile philosophy of minimizing external dependencies, resulting in:
+The `sumarai` project, including both `sumarai.py` and `sumarai.go`, has been implemented using only the standard libraries of their respective languages. This approach aligns with the llamafile philosophy of minimizing external dependencies, resulting in:
 
 - Improved portability across different environments
 - Reduced security risks associated with third-party libraries
@@ -66,8 +66,8 @@ By using only built-in modules, we ensure that the client can run on any system 
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/summarai.git
-   cd summarai
+   git clone https://github.com/yourusername/sumarai.git
+   cd sumarai
    ```
 
 2. Ensure you have the llamafile executable. You can either:
@@ -77,18 +77,18 @@ By using only built-in modules, we ensure that the client can run on any system 
 
 ### Usage
 
-There are two main ways to use the summarai application (both Python and Go versions follow the same usage pattern):
+There are two main ways to use the sumarai application (both Python and Go versions follow the same usage pattern):
 
 1. **Interactive Shell Mode:**
 
    Run the script without any arguments to start the interactive shell:
 
    ```
-   python summarai.py
+   python sumarai.py
    ```
    or
    ```
-   go run summarai.go
+   go run sumarai.go
    ```
 
    This will launch an interactive chat interface where you can communicate with the AI model in real-time. Available commands in the interactive shell:
@@ -101,21 +101,21 @@ There are two main ways to use the summarai application (both Python and Go vers
    To summarize one or more files:
 
    ```
-   python summarai.py file1.txt file2.txt
+   python sumarai.py file1.txt file2.txt
    ```
    or
    ```
-   go run summarai.go file1.txt file2.txt
+   go run sumarai.go file1.txt file2.txt
    ```
 
    You can also specify a custom prompt for summarization:
 
    ```
-   python summarai.py --prompt "Provide a detailed analysis of:" file.txt
+   python sumarai.py --prompt "Provide a detailed analysis of:" file.txt
    ```
    or
    ```
-   go run summarai.go --prompt "Provide a detailed analysis of:" file.txt
+   go run sumarai.go --prompt "Provide a detailed analysis of:" file.txt
    ```
 
 Additional options:
@@ -128,16 +128,16 @@ Additional options:
 If you want to specify a custom path for the llamafile executable:
 
 ```
-python summarai.py --executable /path/to/llamafile [other options]
+python sumarai.py --executable /path/to/llamafile [other options]
 ```
 or
 ```
-go run summarai.go --executable /path/to/llamafile [other options]
+go run sumarai.go --executable /path/to/llamafile [other options]
 ```
 
 ## Llamafile Executable Search Order
 
-The `summarai` project uses a smart search algorithm to locate the llamafile executable. The search order is as follows:
+The `sumarai` project uses a smart search algorithm to locate the llamafile executable. The search order is as follows:
 
 1. User-specified path (if provided via the --executable argument)
 2. System PATH
@@ -148,7 +148,7 @@ This flexible approach ensures that the script can find the llamafile executable
 
 ## Use Cases
 
-The `summarai` project is particularly useful for:
+The `sumarai` project is particularly useful for:
 
 1. Developers exploring AI-assisted, no-code application development workflows
 2. Organizations seeking to rapidly prototype and develop applications with minimal manual coding
@@ -161,7 +161,7 @@ The `summarai` project is particularly useful for:
 
 ### Python Tests
 
-The Python version of `summarai` uses pytest for testing. To run the tests, follow these steps:
+The Python version of `sumarai` uses pytest for testing. To run the tests, follow these steps:
 
 1. Ensure you have pytest installed. If not, you can install it using pip:
    ```
@@ -170,7 +170,7 @@ The Python version of `summarai` uses pytest for testing. To run the tests, foll
 
 2. Navigate to the project root directory:
    ```
-   cd /path/to/summarai
+   cd /path/to/sumarai
    ```
 
 3. Run the tests using pytest:
@@ -187,12 +187,12 @@ The Python version of `summarai` uses pytest for testing. To run the tests, foll
 
 5. To run a specific test file, you can specify the file path:
    ```
-   pytest test/test_summarai_pytest.py
+   pytest test/test_sumarai_pytest.py
    ```
 
 6. To run a specific test function, you can use the following format:
    ```
-   pytest test/test_summarai_pytest.py::test_function_name
+   pytest test/test_sumarai_pytest.py::test_function_name
    ```
 
 Please note that some tests may require a running llamafile process. These tests are marked with `@pytest.mark.skip(reason="This test requires a running llamafile process")` and will be skipped by default. To run these tests, ensure you have a llamafile process running and remove the skip decorator.
@@ -221,4 +221,4 @@ This project serves as a starting point for further exploration and development 
 
 ---
 
-*Note: This README was generated and updated using the summarai project itself, showcasing its capabilities in action.*
+*Note: This README was generated and updated using the sumarai project itself, showcasing its capabilities in action.*

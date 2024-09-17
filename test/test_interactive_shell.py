@@ -7,7 +7,7 @@ import json
 # Add the parent directory to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from summarai import LlamafileClient, interactive_shell
+from sumarai import LlamafileClient, interactive_shell
 
 @pytest.fixture
 def mock_client():
