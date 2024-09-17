@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -12,156 +14,198 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
-var logger *log.Logger
+var debugEnabled bool
 
-func configureLogging(debugEnabled bool) {
-	logLevel := "INFO"
+func debug(format string, v ...interface{}) {
 	if debugEnabled {
-		logLevel = "DEBUG"
+		log.Printf(format, v...)
 	}
-	logger = log.New(os.Stdout, fmt.Sprintf("%s: ", logLevel), log.Ldate|log.Ltime|log.Lshortfile)
 }
 
 type LlamafileClient struct {
-	ExecutablePath string
-	APIKey         string
-	Host           string
-	Port           int
-	process        *os.Process
+	executablePath string
+	apiKey         string
+	host           string
+	port           int
+	cmd            *exec.Cmd
 }
 
-func findExecutable() (string, error) {
-	// Search in LLAMAFILE environment variable first
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type ChatCompletionResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+}
+
+func NewLlamafileClient(executablePath string) (*LlamafileClient, error) {
+	path, err := findExecutable(executablePath)
+	if err != nil {
+		return nil, err
+	}
+	apiKeyBytes := make([]byte, 16)
+	_, err = rand.Read(apiKeyBytes)
+	if err != nil {
+		return nil, err
+	}
+	apiKey := hex.EncodeToString(apiKeyBytes)
+	client := &LlamafileClient{
+		executablePath: path,
+		apiKey:         apiKey,
+		host:           "localhost",
+		port:           8080,
+	}
+	return client, nil
+}
+
+func findExecutable(executablePath string) (string, error) {
+	if executablePath != "" {
+		if _, err := os.Stat(executablePath); err == nil {
+			return executablePath, nil
+		}
+		return "", fmt.Errorf("Specified executable path %s not found.", executablePath)
+	}
+
+	// Search in PATH
+	pathExecutable, err := exec.LookPath("llamafile")
+	if err == nil {
+		return pathExecutable, nil
+	}
+
+	// Search in current directory
+	currentDirExecutable := filepath.Join(".", "llamafile")
+	if _, err := os.Stat(currentDirExecutable); err == nil {
+		return currentDirExecutable, nil
+	}
+
+	// Search in LLAMAFILE environment variable
 	envExecutable := os.Getenv("LLAMAFILE")
-	fmt.Printf("Debug: Checking LLAMAFILE environment variable: %s\n", envExecutable)
 	if envExecutable != "" {
 		if _, err := os.Stat(envExecutable); err == nil {
 			return envExecutable, nil
 		}
 	}
 
-	// Search in PATH
-	pathExecutable, err := exec.LookPath("llamafile")
-	fmt.Printf("Debug: Checking PATH for llamafile executable: %s\n", pathExecutable)
-	if err == nil {
-		return pathExecutable, nil
-	}
-
-	// Search in current directory
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("error getting current directory: %v", err)
-	}
-	currentDirExecutable := filepath.Join(currentDir, "llamafile")
-	fmt.Printf("Debug: Checking current directory for llamafile executable: %s\n", currentDirExecutable)
-	if _, err := os.Stat(currentDirExecutable); err == nil {
-		return currentDirExecutable, nil
-	}
-
-	return "", fmt.Errorf("llamafile executable not found in LLAMAFILE environment variable, PATH, or current directory")
+	return "", fmt.Errorf("Llamafile executable not found.")
 }
 
-func NewLlamafileClient(executablePath string, apiKey string, host string, port int) (*LlamafileClient, error) {
-	fmt.Printf("Debug: Creating LlamafileClient with ExecutablePath: %s\n", executablePath)
-	var err error
-	if executablePath == "" {
-		executablePath, err = findExecutable()
-		if err != nil {
-			return nil, fmt.Errorf("failed to find llamafile executable: %v", err)
-		}
-	}
-
-	if apiKey == "" {
-		apiKey = generateAPIKey()
-	}
-
-	return &LlamafileClient{
-		ExecutablePath: executablePath,
-		APIKey:         apiKey,
-		Host:           host,
-		Port:           port,
-	}, nil
-}
-
-func generateAPIKey() string {
-	b := make([]byte, 16)
-	_, err := rand.Read(b)
-	if err != nil {
-		logger.Fatalf("Error generating API key: %v", err)
-	}
-	return hex.EncodeToString(b)
-}
-
-func (c *LlamafileClient) StartLlamafile(daemon bool) error {
-	cmd := exec.Command(c.ExecutablePath, "--api-key", c.APIKey)
-	logger.Printf("Starting llamafile with command: %s", cmd.String())
-
+func (client *LlamafileClient) StartLlamafile(daemon bool) error {
+	cmdStr := fmt.Sprintf("%s --api-key %s", client.executablePath, client.apiKey)
+	debug("Starting llamafile with command: %s", cmdStr)
 	if daemon {
-		return c.startDaemon(cmd)
-	}
+		cmd := exec.Command("/bin/sh", "-c", cmdStr)
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Setpgid: true,
+		}
+		err := cmd.Start()
+		if err != nil {
+			return err
+		}
+		client.cmd = cmd
+		debug("Daemon process started")
+	} else {
+		cmd := exec.Command("/bin/sh", "-c", cmdStr)
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			return err
+		}
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return err
+		}
+		err = cmd.Start()
+		if err != nil {
+			return err
+		}
+		client.cmd = cmd
 
-	var err error
-	c.process, err = cmd.Process, cmd.Start()
-	if err != nil {
-		return fmt.Errorf("Error starting llamafile: %v", err)
-	}
+		// Handle termination signals
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+		go func() {
+			<-c
+			client.StopLlamafile()
+			os.Exit(1)
+		}()
 
-	logger.Println("Waiting for llamafile to start...")
-	err = c.waitForServer()
-	if err != nil {
-		return err
+		// Discard or handle stdout and stderr as needed
+		go func() {
+			io.Copy(ioutil.Discard, stdout)
+		}()
+		go func() {
+			io.Copy(ioutil.Discard, stderr)
+		}()
+
+		debug("Waiting for llamafile to start...")
+		err = client.waitForServer()
+		if err != nil {
+			return err
+		}
+		debug("Llamafile started successfully")
 	}
-	logger.Println("Llamafile started successfully")
 	return nil
 }
 
-func (c *LlamafileClient) startDaemon(cmd *exec.Cmd) error {
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Start()
+func (client *LlamafileClient) waitForServer() error {
+	timeout := 60 * time.Second
+	checkInterval := 1 * time.Second
+	startTime := time.Now()
+	for time.Since(startTime) < timeout {
+		resp, err := http.Get(fmt.Sprintf("http://%s:%d/v1/models", client.host, client.port))
+		if err == nil && resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
+			debug("Server is ready")
+			return nil
+		}
+		if client.cmd.ProcessState != nil && client.cmd.ProcessState.Exited() {
+			log.Printf("Llamafile process exited unexpectedly.")
+			return fmt.Errorf("Llamafile failed to start")
+		}
+		time.Sleep(checkInterval)
+	}
+	return fmt.Errorf("Server did not become ready within the timeout period")
 }
 
-func (c *LlamafileClient) waitForServer() error {
-	timeout := time.After(60 * time.Second)
-	tick := time.Tick(1 * time.Second)
-	for {
+func (client *LlamafileClient) StopLlamafile() error {
+	if client.cmd != nil && client.cmd.Process != nil {
+		debug("Stopping llamafile process")
+		err := client.cmd.Process.Signal(syscall.SIGTERM)
+		if err != nil {
+			return err
+		}
+		done := make(chan error)
+		go func() { done <- client.cmd.Wait() }()
 		select {
-		case <-timeout:
-			return fmt.Errorf("Server did not become ready within the timeout period")
-		case <-tick:
-			resp, err := http.Get(fmt.Sprintf("http://%s:%d/v1/models", c.Host, c.Port))
-			if err == nil && resp.StatusCode == http.StatusOK {
-				resp.Body.Close()
-				return nil
+		case <-time.After(10 * time.Second):
+			log.Println("Llamafile process did not terminate, forcing kill")
+			err := client.cmd.Process.Kill()
+			if err != nil {
+				return err
+			}
+		case err := <-done:
+			if err != nil {
+				return err
 			}
 		}
+		debug("Llamafile process stopped")
 	}
-}
-
-func (c *LlamafileClient) StopLlamafile() error {
-	if c.process == nil {
-		return nil
-	}
-	logger.Println("Stopping llamafile process")
-	err := c.process.Signal(os.Interrupt)
-	if err != nil {
-		return fmt.Errorf("Error stopping llamafile: %v", err)
-	}
-	_, err = c.process.Wait()
-	if err != nil {
-		return fmt.Errorf("Error waiting for llamafile to stop: %v", err)
-	}
-	logger.Println("Llamafile process stopped")
 	return nil
 }
 
-func (c *LlamafileClient) ChatCompletion(messages []map[string]string, model string, stream bool) (io.ReadCloser, error) {
-	url := fmt.Sprintf("http://%s:%d/v1/chat/completions", c.Host, c.Port)
+func (client *LlamafileClient) ChatCompletion(messages []Message, model string, stream bool) (*ChatCompletionResponse, io.ReadCloser, error) {
+	url := fmt.Sprintf("http://%s:%d/v1/chat/completions", client.host, client.port)
 	data := map[string]interface{}{
 		"model":    model,
 		"messages": messages,
@@ -169,233 +213,229 @@ func (c *LlamafileClient) ChatCompletion(messages []map[string]string, model str
 	}
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		return nil, fmt.Errorf("Error marshaling request data: %v", err)
+		return nil, nil, err
 	}
 
-	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, fmt.Errorf("Error creating request: %v", err)
+		return nil, nil, err
 	}
-
 	req.Header.Set("Content-Type", "application/json")
-	if c.APIKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.APIKey))
+	if client.apiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", client.apiKey))
 	}
 
-	logger.Printf("Sending chat completion request to %s", url)
-	logger.Printf("Request headers: %v", req.Header)
-	logger.Printf("Request body: %s", jsonData)
+	debug("Sending chat completion request to %s", url)
+	debug("Request headers: %v", req.Header)
+	debug("Request body: %s", string(jsonData))
 
-	resp, err := http.DefaultClient.Do(req)
+	clientHttp := &http.Client{}
+	resp, err := clientHttp.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Error in chat completion request: %v", err)
+		return nil, nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
+		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("Error: %d, %s", resp.StatusCode, string(body))
+		return nil, nil, fmt.Errorf("Error: %d, %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	return resp.Body, nil
+	if stream {
+		return nil, resp.Body, nil
+	} else {
+		defer resp.Body.Close()
+		var response ChatCompletionResponse
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		if err != nil {
+			return nil, nil, err
+		}
+		return &response, nil, nil
+	}
 }
 
 func checkServerStatus() {
 	resp, err := http.Get("http://localhost:8080/v1/models")
-	if err != nil {
+	if err != nil || resp.StatusCode != http.StatusOK {
 		fmt.Println("not running")
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		fmt.Println("running")
 	} else {
-		fmt.Println("not running")
+		fmt.Println("running")
+	}
+	if resp != nil {
+		resp.Body.Close()
 	}
 }
 
 func interactiveShell(client *LlamafileClient) {
 	fmt.Println("Welcome to the interactive shell. Type 'help' for available commands or 'exit' to quit.")
-	conversationHistory := []map[string]string{
-		{"role": "system", "content": "You are a helpful AI assistant. Respond to the user's queries concisely and accurately."},
+	conversationHistory := []Message{
+		{"system", "You are a helpful AI assistant. Respond to the user's queries concisely and accurately."},
 	}
 
-	scanner := bufio.NewScanner(os.Stdin)
+	printHelp := func() {
+		fmt.Println("Available commands:")
+		fmt.Println("  help    - Show this help message")
+		fmt.Println("  clear   - Clear the conversation history")
+		fmt.Println("  exit    - Exit the interactive shell")
+	}
+
+	reader := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Print("You: ")
-		if !scanner.Scan() {
-			break
-		}
-		userInput := strings.TrimSpace(scanner.Text())
-
-		switch strings.ToLower(userInput) {
-		case "exit":
-			fmt.Println("Exiting interactive shell.")
-			return
-		case "help":
-			fmt.Println("Available commands:")
-			fmt.Println("  help    - Show this help message")
-			fmt.Println("  clear   - Clear the conversation history")
-			fmt.Println("  exit    - Exit the interactive shell")
+		userInput, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Error reading input:", err)
 			continue
-		case "clear":
-			conversationHistory = []map[string]string{conversationHistory[0]}
+		}
+		userInput = strings.TrimSpace(userInput)
+		if strings.ToLower(userInput) == "exit" {
+			fmt.Println("Exiting interactive shell.")
+			break
+		} else if strings.ToLower(userInput) == "help" {
+			printHelp()
+			continue
+		} else if strings.ToLower(userInput) == "clear" {
+			conversationHistory = conversationHistory[:1] // Keep only the system message
 			fmt.Println("Conversation history cleared.")
 			continue
 		}
 
-		conversationHistory = append(conversationHistory, map[string]string{"role": "user", "content": userInput})
-		response, err := client.ChatCompletion(conversationHistory, "local-model", true)
+		conversationHistory = append(conversationHistory, Message{"user", userInput})
+		_, body, err := client.ChatCompletion(conversationHistory, "local-model", true)
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			fmt.Println("An error occurred:", err)
 			continue
 		}
-
 		fmt.Print("AI: ")
-		scanner := bufio.NewScanner(response)
-		scanner.Split(bufio.ScanLines)
-		var aiResponse strings.Builder
-		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.HasPrefix(line, "data: ") {
-				var data map[string]interface{}
-				err := json.Unmarshal([]byte(line[6:]), &data)
-				if err != nil {
-					continue
+		aiResponse := ""
+		buffer := ""
+		reader := bufio.NewReader(body)
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					break
 				}
-				if choices, ok := data["choices"].([]interface{}); ok && len(choices) > 0 {
-					if choice, ok := choices[0].(map[string]interface{}); ok {
-						if delta, ok := choice["delta"].(map[string]interface{}); ok {
-							if content, ok := delta["content"].(string); ok {
-								fmt.Print(content)
-								aiResponse.WriteString(content)
-							}
+				fmt.Println("Error reading response:", err)
+				break
+			}
+			buffer += line
+			if strings.HasSuffix(buffer, "\n") {
+				chunks := strings.Split(buffer, "\n")
+				for _, chunk := range chunks {
+					if strings.HasPrefix(chunk, "data: ") {
+						dataStr := strings.TrimPrefix(chunk, "data: ")
+						var data map[string]interface{}
+						err := json.Unmarshal([]byte(dataStr), &data)
+						if err != nil {
+							// Incomplete JSON, skip
+							continue
 						}
-						if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
+						choices, ok := data["choices"].([]interface{})
+						if !ok || len(choices) == 0 {
+							continue
+						}
+						choice := choices[0].(map[string]interface{})
+						delta, ok := choice["delta"].(map[string]interface{})
+						if !ok {
+							continue
+						}
+						if content, ok := delta["content"].(string); ok {
+							aiResponse += content
+							fmt.Print(content)
+						}
+						if finishReason, ok := choice["finish_reason"]; ok && finishReason != nil {
 							fmt.Println()
 							break
 						}
 					}
 				}
+				buffer = ""
 			}
 		}
-		conversationHistory = append(conversationHistory, map[string]string{"role": "assistant", "content": aiResponse.String()})
-		response.Close()
+		conversationHistory = append(conversationHistory, Message{"assistant", aiResponse})
 	}
 }
 
 func main() {
-	var debugEnabled bool
-	var prompt string
-	var runAsService bool
-	var stop bool
-	var checkStatus bool
-	var files []string
+	debugFlag := flag.Bool("debug", false, "Enable debug output")
+	prompt := flag.String("prompt", "Summarize the following content:", "Custom prompt for summarization")
+	service := flag.Bool("service", false, "Run llamafile as a service")
+	stop := flag.Bool("stop", false, "Stop the running llamafile service")
+	status := flag.Bool("status", false, "Check if the llamafile service is running")
+	executablePath := flag.String("executable", "", "Path to the llamafile executable")
+	flag.Parse()
 
-	for i := 1; i < len(os.Args); i++ {
-		arg := os.Args[i]
-		switch arg {
-		case "--debug":
-			debugEnabled = true
-		case "-p", "--prompt":
-			if i+1 < len(os.Args) {
-				i++
-				prompt = os.Args[i]
-			}
-		case "--service":
-			runAsService = true
-		case "--stop":
-			stop = true
-		case "--status":
-			checkStatus = true
-		default:
-			files = append(files, arg)
-		}
+	files := flag.Args()
+	debugEnabled = *debugFlag
+
+	if debugEnabled {
+		log.SetFlags(log.LstdFlags | log.Lshortfile)
+	} else {
+		log.SetFlags(0)
+		log.SetOutput(ioutil.Discard)
 	}
 
-	if prompt == "" {
-		prompt = "Summarize the following content:"
-	}
-
-	configureLogging(debugEnabled)
-
-	if !runAsService && !stop && !checkStatus && len(files) == 0 {
-		client, err := NewLlamafileClient("", "", "localhost", 8080)
-		if err != nil {
-			logger.Fatalf("Error creating LlamafileClient: %v", err)
-		}
-
-		defer client.StopLlamafile()
-		err = client.StartLlamafile(false)
-		if err != nil {
-			logger.Fatalf("Error starting Llamafile: %v", err)
-		}
-		interactiveShell(client)
-		return
-	}
-
-	client, err := NewLlamafileClient("", "", "localhost", 8080)
+	client, err := NewLlamafileClient(*executablePath)
 	if err != nil {
-		logger.Fatalf("Error creating LlamafileClient: %v", err)
+		log.Fatalf("Error initializing LlamafileClient: %v", err)
 	}
 
-	if stop {
-		err = client.StopLlamafile()
+	if *stop {
+		err := client.StopLlamafile()
 		if err != nil {
-			logger.Fatalf("Error stopping Llamafile service: %v", err)
+			log.Fatalf("Error stopping llamafile service: %v", err)
 		}
-		logger.Println("Llamafile service stopped")
+		log.Println("Llamafile service stopped")
 		return
 	}
 
-	if checkStatus {
+	if *status {
 		checkServerStatus()
 		return
 	}
 
-	if runAsService {
-		err = client.StartLlamafile(true)
+	if *service {
+		err := client.StartLlamafile(true)
 		if err != nil {
-			logger.Fatalf("Error starting Llamafile service: %v", err)
+			log.Fatalf("Error starting llamafile as service: %v", err)
 		}
-		logger.Println("Llamafile running as a service")
+		log.Println("Llamafile running as a service")
 		return
 	}
 
-	for _, file := range files {
-		content, err := ioutil.ReadFile(file)
+	if len(files) == 0 {
+		err := client.StartLlamafile(false)
 		if err != nil {
-			logger.Printf("Error reading file %s: %v", file, err)
-			continue
+			log.Fatalf("Error starting llamafile: %v", err)
 		}
-		messages := []map[string]string{
-			{"role": "user", "content": fmt.Sprintf("%s\n\n%s", prompt, string(content))},
-		}
-		response, err := client.ChatCompletion(messages, "local-model", false)
+		defer client.StopLlamafile()
+		interactiveShell(client)
+	} else {
+		err := client.StartLlamafile(false)
 		if err != nil {
-			logger.Printf("Error in chat completion for file %s: %v", file, err)
-			continue
+			log.Fatalf("Error starting llamafile: %v", err)
 		}
-		defer response.Close()
-		body, err := ioutil.ReadAll(response)
-		if err != nil {
-			logger.Printf("Error reading response for file %s: %v", file, err)
-			continue
-		}
-		var result map[string]interface{}
-		err = json.Unmarshal(body, &result)
-		if err != nil {
-			logger.Printf("Error parsing response for file %s: %v", file, err)
-			continue
-		}
-		if choices, ok := result["choices"].([]interface{}); ok && len(choices) > 0 {
-			if choice, ok := choices[0].(map[string]interface{}); ok {
-				if message, ok := choice["message"].(map[string]interface{}); ok {
-					if content, ok := message["content"].(string); ok {
-						fmt.Println(content)
-					}
-				}
+		defer client.StopLlamafile()
+		for _, file := range files {
+			content, err := ioutil.ReadFile(file)
+			if err != nil {
+				log.Printf("Error reading file %s: %v", file, err)
+				continue
+			}
+			messages := []Message{
+				{"user", fmt.Sprintf("%s\n\n%s", *prompt, string(content))},
+			}
+			response, _, err := client.ChatCompletion(messages, "local-model", false)
+			if err != nil {
+				log.Printf("Error getting chat completion: %v", err)
+				continue
+			}
+			if len(response.Choices) > 0 {
+				contentResponse := response.Choices[0].Message.Content
+				fmt.Println(contentResponse)
+			} else {
+				fmt.Println("No content in response")
 			}
 		}
 	}
