@@ -18,7 +18,9 @@ This project employs a unique development methodology:
 
 4. **AI-Driven Problem Solving**: Complex programming challenges are solved by leveraging the AI's vast knowledge of programming patterns, best practices, and problem-solving techniques.
 
-This methodology demonstrates the potential of AI-assisted development in dramatically reducing the time and technical expertise required to create functional applications.
+5. **Multi-Language Implementation**: The project demonstrates the ability to generate equivalent implementations in multiple programming languages (Python and Go) using the same AI-assisted approach.
+
+This methodology demonstrates the potential of AI-assisted development in dramatically reducing the time and technical expertise required to create functional applications across different programming languages.
 
 ## Key Features
 
@@ -27,33 +29,37 @@ This methodology demonstrates the potential of AI-assisted development in dramat
    - Inference at competitive token rates using consumer hardware
    - Completion of meaningful tasks in isolated environments
    - Enhanced information security for sensitive applications
-3. **Zero-Dependencies Philosophy**: The project adheres to the llamafile zero-dependencies approach, using only the Python standard library for all functionality.
+3. **Zero-Dependencies Philosophy**: The project adheres to the llamafile zero-dependencies approach, using only the standard libraries for all functionality in both Python and Go implementations.
 4. **Flexible Executable Discovery**: Automatically locates the llamafile executable using a smart search algorithm.
 5. **Interactive Shell**: Provides an interactive chat interface for real-time communication with the AI model.
+6. **Multi-Language Support**: Offers equivalent implementations in Python and Go, showcasing the versatility of the AI-assisted development approach.
 
 ## Technology Stack
 
 - **IDE**: Visual Studio Code
 - **AI Assistant**: Claude Dev plugin (Anthropic)
 - **Local LLM**: llamafile APIs
-- **Programming Language**: Python (standard library only)
+- **Programming Languages**: 
+  - Python (standard library only)
+  - Go (standard library only)
 - **Additional Tools**: Various shell commands for file and content manipulation
 
 ## Zero-Dependencies Approach
 
-The `summarai` project, particularly the `summarai.py`, has been implemented using only the Python standard library. This approach aligns with the llamafile philosophy of minimizing external dependencies, resulting in:
+The `summarai` project, including both `summarai.py` and `summarai.go`, has been implemented using only the standard libraries of their respective languages. This approach aligns with the llamafile philosophy of minimizing external dependencies, resulting in:
 
 - Improved portability across different environments
 - Reduced security risks associated with third-party libraries
 - Simplified deployment and maintenance
 
-By using only built-in Python modules, we ensure that the client can run on any system with a standard Python installation, without the need for additional package management or potential compatibility issues.
+By using only built-in modules, we ensure that the client can run on any system with standard Python or Go installations, without the need for additional package management or potential compatibility issues.
 
 ## Getting Started
 
 ### Prerequisites
 
-- Python 3.6 or higher
+- Python 3.6 or higher (for Python version)
+- Go 1.16 or higher (for Go version)
 - llamafile executable (can be placed in PATH, current directory, or specified via LLAMAFILE environment variable)
 
 ### Installation
@@ -71,7 +77,7 @@ By using only built-in Python modules, we ensure that the client can run on any 
 
 ### Usage
 
-There are two main ways to use the summarai script:
+There are two main ways to use the summarai application (both Python and Go versions follow the same usage pattern):
 
 1. **Interactive Shell Mode:**
 
@@ -79,6 +85,10 @@ There are two main ways to use the summarai script:
 
    ```
    python summarai.py
+   ```
+   or
+   ```
+   go run summarai.go
    ```
 
    This will launch an interactive chat interface where you can communicate with the AI model in real-time. Available commands in the interactive shell:
@@ -93,11 +103,19 @@ There are two main ways to use the summarai script:
    ```
    python summarai.py file1.txt file2.txt
    ```
+   or
+   ```
+   go run summarai.go file1.txt file2.txt
+   ```
 
    You can also specify a custom prompt for summarization:
 
    ```
    python summarai.py --prompt "Provide a detailed analysis of:" file.txt
+   ```
+   or
+   ```
+   go run summarai.go --prompt "Provide a detailed analysis of:" file.txt
    ```
 
 Additional options:
@@ -111,6 +129,10 @@ If you want to specify a custom path for the llamafile executable:
 
 ```
 python summarai.py --executable /path/to/llamafile [other options]
+```
+or
+```
+go run summarai.go --executable /path/to/llamafile [other options]
 ```
 
 ## Llamafile Executable Search Order
@@ -133,10 +155,13 @@ The `summarai` project is particularly useful for:
 3. Researchers studying the capabilities and limitations of AI-driven software development
 4. Projects requiring secure, isolated LLM solutions with minimal dependencies
 5. Users who want to interact with an AI model through a simple command-line interface
+6. Developers interested in comparing equivalent implementations across different programming languages (Python and Go)
 
 ## Running Tests
 
-The `summarai` project uses pytest for testing. To run the tests, follow these steps:
+### Python Tests
+
+The Python version of `summarai` uses pytest for testing. To run the tests, follow these steps:
 
 1. Ensure you have pytest installed. If not, you can install it using pip:
    ```
@@ -172,9 +197,19 @@ The `summarai` project uses pytest for testing. To run the tests, follow these s
 
 Please note that some tests may require a running llamafile process. These tests are marked with `@pytest.mark.skip(reason="This test requires a running llamafile process")` and will be skipped by default. To run these tests, ensure you have a llamafile process running and remove the skip decorator.
 
+### Go Tests
+
+(To be implemented: Add information about running Go tests once they are created)
+
 ## Future Development
 
-This project serves as a starting point for further exploration and development in the field of AI-assisted, no-code LLM applications. We welcome contributions and ideas to expand its capabilities and use cases while maintaining the zero-dependencies philosophy and the no-code development approach.
+This project serves as a starting point for further exploration and development in the field of AI-assisted, no-code LLM applications. We welcome contributions and ideas to expand its capabilities and use cases while maintaining the zero-dependencies philosophy and the no-code development approach. Some potential areas for future development include:
+
+1. Implementing equivalent functionality in other programming languages
+2. Enhancing the interactive shell with more features
+3. Improving error handling and edge case management
+4. Developing a graphical user interface (GUI) version of the application
+5. Extending the summarization capabilities to handle more file formats and larger datasets
 
 ## License
 
