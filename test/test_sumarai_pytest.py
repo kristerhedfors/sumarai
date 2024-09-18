@@ -23,24 +23,28 @@ def client():
     logger.info(f"\nInitialized LlamafileClient with executable: {executable_path}")
     return client
 
-@pytest.mark.parametrize("mock_isfile, mock_which, mock_getcwd, mock_environ, executable_path, expected", [
-    (lambda x: x == "./custom/path/llamafile", None, None, {}, "./custom/path/llamafile", "./custom/path/llamafile"),
-    (lambda x: False, lambda x: "/usr/bin/llamafile", None, {}, None, "/usr/bin/llamafile"),
-    (lambda x: x == '/mocked/current/directory/llamafile', lambda x: None, '/mocked/current/directory', {}, None, "/mocked/current/directory/llamafile"),
-    (lambda x: x == './env/path/llamafile', lambda x: None, None, {'LLAMAFILE': './env/path/llamafile'}, None, "./env/path/llamafile"),
-    (lambda x: False, lambda x: None, None, {}, None, None)
+@pytest.mark.parametrize("mock_isfile, mock_which, mock_getcwd, mock_environ, executable_path, expected_result, expected_exception", [
+    (lambda x: True, None, None, {}, "./custom/path/llamafile", "custom/path/llamafile", None),
+    (lambda x: False, lambda x: "/usr/bin/llamafile", None, {}, None, "/usr/bin/llamafile", None),
+    (lambda x: True, lambda x: None, '/mocked/current/directory', {}, None, "/mocked/current/directory/llamafile", None),
+    (lambda x: True, lambda x: None, None, {'LLAMAFILE': './env/path/llamafile'}, None, "env/path/llamafile", None),
+    (lambda x: False, lambda x: None, None, {}, None, None, FileNotFoundError),
+    (lambda x: False, None, None, {}, "./nonexistent/llamafile", None, FileNotFoundError)
 ])
-def test_find_executable(client, mock_isfile, mock_which, mock_getcwd, mock_environ, executable_path, expected):
+def test_find_executable(client, mock_isfile, mock_which, mock_getcwd, mock_environ, executable_path, expected_result, expected_exception):
     with patch('os.path.isfile', side_effect=mock_isfile):
-        with patch('shutil.which', side_effect=mock_which or (lambda x: None)):
-            with patch('os.getcwd', return_value=mock_getcwd or ''):
-                with patch.dict('os.environ', mock_environ):
-                    if expected is None:
-                        with pytest.raises(FileNotFoundError):
-                            client._find_executable(executable_path)
-                    else:
-                        result = client._find_executable(executable_path)
-                        assert result == expected
+        with patch('os.access', return_value=True):  # Assume all files are executable
+            with patch('shutil.which', side_effect=mock_which or (lambda x: None)):
+                with patch('os.getcwd', return_value=mock_getcwd or ''):
+                    with patch.dict('os.environ', mock_environ):
+                        if expected_exception:
+                            with pytest.raises(expected_exception) as excinfo:
+                                client._find_executable(executable_path)
+                            if executable_path:
+                                assert os.path.basename(executable_path) in str(excinfo.value)
+                        else:
+                            result = client._find_executable(executable_path)
+                            assert os.path.normpath(result) == os.path.normpath(expected_result)
 
 @patch('subprocess.Popen')
 @patch('http.client.HTTPConnection')

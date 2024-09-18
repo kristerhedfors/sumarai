@@ -7,7 +7,7 @@ import json
 # Add the parent directory to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sumarai import LlamafileClient, interactive_shell
+from sumarai import LlamafileClient, interactive_shell, main
 
 @pytest.fixture
 def mock_client():
@@ -84,6 +84,31 @@ def test_interactive_shell_error_handling(mock_print, mock_input, mock_client, d
 
     mock_client.chat_completion.assert_called_once()
     mock_print.assert_any_call('An error occurred: API Error')
+
+@patch('sys.exit')
+@patch('logging.getLogger')
+@patch('argparse.ArgumentParser.parse_args')
+def test_main_nonexistent_llamafile(mock_parse_args, mock_get_logger, mock_exit):
+    # Mocking command-line arguments
+    mock_args = MagicMock()
+    mock_args.llamafile = '/nonexistent/path/to/llamafile'
+    mock_args.debug = False
+    mock_args.stop = False
+    mock_args.status = False
+    mock_args.service = False
+    mock_args.files = []
+    mock_parse_args.return_value = mock_args
+
+    # Mocking logger
+    mock_logger = MagicMock()
+    mock_get_logger.return_value = mock_logger
+
+    # Call the main function
+    main()
+
+    # Assert that the error was logged and the program exited
+    mock_logger.error.assert_called_with("Error: Specified executable path /nonexistent/path/to/llamafile not found or not executable.")
+    mock_exit.assert_called_with(1)
 
 if __name__ == '__main__':
     pytest.main()

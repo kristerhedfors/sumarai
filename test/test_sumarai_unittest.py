@@ -18,13 +18,14 @@ logger = logging.getLogger(__name__)
 class TestLlamafileClient(unittest.TestCase):
     def setUp(self):
         self.executable_path = "./llamafile"
-        self.client = LlamafileClient(self.executable_path)  # Remove api_key argument
+        self.client = LlamafileClient(self.executable_path)
         logger.info(f"\nInitialized LlamafileClient with executable: {self.executable_path}")
 
     @patch('os.path.isfile', return_value=True)
-    def test_find_executable_provided(self, mock_isfile):
+    @patch('os.access', return_value=True)
+    def test_find_executable_provided(self, mock_access, mock_isfile):
         executable = self.client._find_executable("./custom/path/llamafile")
-        self.assertEqual(executable, "./custom/path/llamafile")
+        self.assertEqual(executable, os.path.abspath("./custom/path/llamafile"))
 
     @patch('os.path.isfile', return_value=False)
     @patch('shutil.which', return_value='/usr/bin/llamafile')
@@ -32,19 +33,21 @@ class TestLlamafileClient(unittest.TestCase):
         executable = self.client._find_executable(None)
         self.assertEqual(executable, "/usr/bin/llamafile")
 
-    @patch('os.path.isfile', side_effect=lambda path: path == '/mocked/current/directory/llamafile')
+    @patch('os.path.isfile', side_effect=lambda path: 'llamafile' in path)
+    @patch('os.access', return_value=True)
     @patch('shutil.which', return_value=None)
     @patch('os.getcwd', return_value='/mocked/current/directory')
-    def test_find_executable_in_current_dir(self, mock_getcwd, mock_which, mock_isfile):
+    def test_find_executable_in_current_dir(self, mock_getcwd, mock_which, mock_access, mock_isfile):
         executable = self.client._find_executable(None)
         self.assertEqual(executable, "/mocked/current/directory/llamafile")
 
-    @patch('os.path.isfile', side_effect=lambda path: path == './env/path/llamafile')
+    @patch('os.path.isfile', side_effect=lambda path: 'llamafile' in path)
+    @patch('os.access', return_value=True)
     @patch('shutil.which', return_value=None)
-    @patch('os.environ.get', return_value='./env/path/llamafile')
-    def test_find_executable_in_env_var(self, mock_environ_get, mock_which, mock_isfile):
+    @patch('os.environ.get', side_effect=lambda key, default=None: './env/path/llamafile' if key == 'LLAMAFILE' else None)
+    def test_find_executable_in_env_var(self, mock_environ_get, mock_which, mock_access, mock_isfile):
         executable = self.client._find_executable(None)
-        self.assertEqual(executable, "./env/path/llamafile")
+        self.assertEqual(executable, os.path.abspath("./env/path/llamafile"))
 
     @patch('os.path.isfile', return_value=False)
     @patch('shutil.which', return_value=None)
@@ -67,7 +70,7 @@ class TestLlamafileClient(unittest.TestCase):
         
         self.client.start_llamafile()
 
-        expected_command = f"{self.executable_path} --api-key {self.client.api_key}"
+        expected_command = f"{os.path.abspath(self.executable_path)} --api-key {self.client.api_key}"
         mock_popen.assert_called_once_with(
             expected_command,
             shell=True,
@@ -141,15 +144,15 @@ class TestLlamafileClient(unittest.TestCase):
         with self.assertRaises(Exception) as context:
             self.client.chat_completion(messages)
 
-            logger.info(f"Raised exception: {str(context.exception)}")
-            self.assertIn("Error: 401", str(context.exception))
-            self.assertIn("Unauthorized", str(context.exception))
+        logger.info(f"Raised exception: {str(context.exception)}")
+        self.assertIn("Error: 401", str(context.exception))
+        self.assertIn("Unauthorized", str(context.exception))
 
 class TestLlamafileClientNonMocked(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.executable_path = "./llamafile/Phi-3-mini-128k-instruct-Q4_K_M.llamafile"
-        cls.client = LlamafileClient(cls.executable_path)  # Remove api_key argument
+        cls.executable_path = "Phi-3-mini-128k-instruct-Q4_K_M.llamafile"
+        cls.client = LlamafileClient(cls.executable_path)
         logger.info(f"\nInitializing LlamafileClient with executable: {cls.executable_path}")
         try:
             cls.client.start_llamafile()
