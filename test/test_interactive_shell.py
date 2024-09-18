@@ -21,21 +21,25 @@ def create_stream_response(content):
     ] + [f'data: {json.dumps({"choices": [{"finish_reason": "stop"}]})}\n\n'.encode('utf-8')]
     return response
 
+@pytest.fixture
+def default_prompt():
+    return "You are a helpful AI assistant. Respond to the user's queries concisely and accurately."
+
 @patch('builtins.input')
 @patch('builtins.print')
-def test_interactive_shell_exit(mock_print, mock_input, mock_client):
+def test_interactive_shell_exit(mock_print, mock_input, mock_client, default_prompt):
     mock_input.return_value = 'exit'
-    interactive_shell(mock_client)
+    interactive_shell(mock_client, default_prompt)
     mock_client.chat_completion.assert_not_called()
     mock_print.assert_any_call("Exiting interactive shell.")
 
 @patch('builtins.input')
 @patch('builtins.print')
-def test_interactive_shell_single_interaction(mock_print, mock_input, mock_client):
+def test_interactive_shell_single_interaction(mock_print, mock_input, mock_client, default_prompt):
     mock_input.side_effect = ['Hello, AI!', 'exit']
     mock_client.chat_completion.return_value = create_stream_response("Hello, human! How can I assist you today?")
 
-    interactive_shell(mock_client)
+    interactive_shell(mock_client, default_prompt)
 
     mock_client.chat_completion.assert_called_once()
     expected_calls = [
@@ -48,14 +52,14 @@ def test_interactive_shell_single_interaction(mock_print, mock_input, mock_clien
 
 @patch('builtins.input')
 @patch('builtins.print')
-def test_interactive_shell_multiple_interactions(mock_print, mock_input, mock_client):
+def test_interactive_shell_multiple_interactions(mock_print, mock_input, mock_client, default_prompt):
     mock_input.side_effect = ['First question', 'Second question', 'exit']
     mock_client.chat_completion.side_effect = [
         create_stream_response("First answer"),
         create_stream_response("Second answer")
     ]
 
-    interactive_shell(mock_client)
+    interactive_shell(mock_client, default_prompt)
 
     assert mock_client.chat_completion.call_count == 2
     expected_calls = [
@@ -72,11 +76,11 @@ def test_interactive_shell_multiple_interactions(mock_print, mock_input, mock_cl
 
 @patch('builtins.input')
 @patch('builtins.print')
-def test_interactive_shell_error_handling(mock_print, mock_input, mock_client):
+def test_interactive_shell_error_handling(mock_print, mock_input, mock_client, default_prompt):
     mock_input.side_effect = ['Trigger error', 'exit']
     mock_client.chat_completion.side_effect = Exception('API Error')
 
-    interactive_shell(mock_client)
+    interactive_shell(mock_client, default_prompt)
 
     mock_client.chat_completion.assert_called_once()
     mock_print.assert_any_call('An error occurred: API Error')

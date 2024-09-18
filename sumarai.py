@@ -28,14 +28,18 @@ class LlamafileClient:
 
     def _find_executable(self, executable_path):
         self.logger.debug("Starting search for llamafile executable")
+        self.logger.debug(f"LLAMAFILE environment variable: {os.environ.get('LLAMAFILE')}")
         self.logger.debug(f"LLAMAFILE_PATH environment variable: {os.environ.get('LLAMAFILE_PATH')}")
         
         if executable_path:
             self.logger.debug(f"Checking specified executable path: {executable_path}")
-            if os.path.isfile(executable_path):
-                self.logger.debug(f"Using specified executable path: {executable_path}")
-                return executable_path
-            self.logger.warning(f"Specified executable path {executable_path} not found.")
+            # Convert relative path to absolute path
+            abs_path = os.path.abspath(executable_path)
+            self.logger.debug(f"Absolute path: {abs_path}")
+            if os.path.isfile(abs_path) and os.access(abs_path, os.X_OK):
+                self.logger.debug(f"Using specified executable path: {abs_path}")
+                return abs_path
+            raise FileNotFoundError(f"Specified executable path {abs_path} not found or not executable.")
 
         # Search in PATH
         self.logger.debug("Searching for llamafile in PATH")
@@ -45,15 +49,29 @@ class LlamafileClient:
             return path_executable
         self.logger.debug("llamafile not found in PATH")
 
+        # Search in LLAMAFILE environment variable
+        env_executable = os.environ.get('LLAMAFILE')
+        if env_executable:
+            self.logger.debug(f"Checking LLAMAFILE: {env_executable}")
+            abs_path = os.path.abspath(env_executable)
+            if os.path.isfile(abs_path) and os.access(abs_path, os.X_OK):
+                self.logger.debug(f"Using llamafile from LLAMAFILE: {abs_path}")
+                return abs_path
+            else:
+                self.logger.warning(f"LLAMAFILE set but file not found or not executable: {abs_path}")
+        else:
+            self.logger.debug("LLAMAFILE environment variable not set")
+
         # Search in LLAMAFILE_PATH environment variable
         env_executable = os.environ.get('LLAMAFILE_PATH')
         if env_executable:
             self.logger.debug(f"Checking LLAMAFILE_PATH: {env_executable}")
-            if os.path.isfile(env_executable):
-                self.logger.debug(f"Using llamafile from LLAMAFILE_PATH: {env_executable}")
-                return env_executable
+            abs_path = os.path.abspath(env_executable)
+            if os.path.isfile(abs_path) and os.access(abs_path, os.X_OK):
+                self.logger.debug(f"Using llamafile from LLAMAFILE_PATH: {abs_path}")
+                return abs_path
             else:
-                self.logger.warning(f"LLAMAFILE_PATH set but file not found: {env_executable}")
+                self.logger.warning(f"LLAMAFILE_PATH set but file not found or not executable: {abs_path}")
         else:
             self.logger.debug("LLAMAFILE_PATH environment variable not set")
 
@@ -61,15 +79,17 @@ class LlamafileClient:
         current_dir = os.getcwd()
         self.logger.debug(f"Searching for llamafile in current directory: {current_dir}")
         current_dir_executable = os.path.join(current_dir, 'llamafile')
-        if os.path.isfile(current_dir_executable):
+        if os.path.isfile(current_dir_executable) and os.access(current_dir_executable, os.X_OK):
             self.logger.debug(f"Using llamafile from current directory: {current_dir_executable}")
             return current_dir_executable
         self.logger.debug("llamafile not found in current directory")
 
-        self.logger.error("Llamafile executable not found in PATH, current directory, or LLAMAFILE_PATH environment variable.")
+        self.logger.error("Llamafile executable not found in PATH, current directory, or environment variables.")
         raise FileNotFoundError("Llamafile executable not found.")
 
     def start_llamafile(self, daemon=False):
+        if not self.executable_path:
+            raise FileNotFoundError("Llamafile executable not found.")
         cmd = f"{self.executable_path} --api-key {self.api_key}"
         self.logger.debug(f"Starting llamafile with command: {cmd}")
         try:
@@ -327,8 +347,11 @@ def main():
     except FileNotFoundError as e:
         logger.error(f"Error: {str(e)}")
         print(f"Error: {str(e)}")
+        sys.exit(1)  # Exit with error code 1
     except Exception as e:
         logger.exception("An error occurred")
+        print(f"An error occurred: {str(e)}")
+        sys.exit(1)  # Exit with error code 1
     finally:
         if 'client' in locals() and not args.service:
             client.stop_llamafile()
