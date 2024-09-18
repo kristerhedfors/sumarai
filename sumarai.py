@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import logging
 import argparse
 import subprocess
@@ -194,10 +195,10 @@ def check_server_status():
         print("not running")
 
 
-def interactive_shell(client):
+def interactive_shell(client, prompt):
     print("Welcome to the interactive shell. Type 'help' for available commands or 'exit' to quit.")
     conversation_history = [
-        {"role": "system", "content": "You are a helpful AI assistant. Respond to the user's queries concisely and accurately."}
+        {"role": "system", "content": prompt}
     ]
 
     def print_help():
@@ -260,7 +261,7 @@ def interactive_shell(client):
 def main():
     parser = argparse.ArgumentParser(description="Llamafile API Client")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
-    parser.add_argument("-p", "--prompt", help="Custom prompt for summarization", default="Summarize the following content:")
+    parser.add_argument("-p", "--prompt", help="Custom prompt for summarization", default="You are a helpful AI assistant. Respond to the user's queries concisely and accurately.")
     parser.add_argument("--service", action="store_true", help="Run llamafile as a service")
     parser.add_argument("--stop", action="store_true", help="Stop the running llamafile service")
     parser.add_argument("--status", action="store_true", help="Check if the llamafile service is running")
@@ -289,7 +290,7 @@ def main():
 
         if not args.files:
             client.start_llamafile()
-            interactive_shell(client)
+            interactive_shell(client, args.prompt)
         else:
             client.start_llamafile()
 
