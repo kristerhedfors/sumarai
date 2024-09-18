@@ -60,7 +60,7 @@ By using only built-in modules, we ensure that the client can run on any system 
 
 - Python 3.6 or higher (for Python version)
 - Go 1.16 or higher (for Go version)
-- llamafile executable (can be placed in PATH, current directory, or specified via LLAMAFILE environment variable)
+- llamafile executable (can be placed in PATH, current directory, or specified via LLAMAFILE_PATH environment variable)
 
 ### Installation
 
@@ -80,7 +80,7 @@ By using only built-in modules, we ensure that the client can run on any system 
 3. Ensure you have the llamafile executable. You can either:
    - Place it in your system's PATH
    - Keep it in the current working directory
-   - Set the LLAMAFILE environment variable to point to its location
+   - Set the LLAMAFILE_PATH environment variable to point to its location
 
 ### Usage
 
@@ -149,7 +149,7 @@ The `sumarai` project uses a smart search algorithm to locate the llamafile exec
 1. User-specified path (if provided via the --executable argument)
 2. System PATH
 3. Current working directory
-4. LLAMAFILE environment variable
+4. LLAMAFILE_PATH environment variable
 
 This flexible approach ensures that the script can find the llamafile executable in various setups without requiring manual configuration in most cases.
 

@@ -27,27 +27,46 @@ class LlamafileClient:
         self.process = None
 
     def _find_executable(self, executable_path):
+        self.logger.debug("Starting search for llamafile executable")
+        self.logger.debug(f"LLAMAFILE_PATH environment variable: {os.environ.get('LLAMAFILE_PATH')}")
+        
         if executable_path:
+            self.logger.debug(f"Checking specified executable path: {executable_path}")
             if os.path.isfile(executable_path):
+                self.logger.debug(f"Using specified executable path: {executable_path}")
                 return executable_path
             self.logger.warning(f"Specified executable path {executable_path} not found.")
 
         # Search in PATH
+        self.logger.debug("Searching for llamafile in PATH")
         path_executable = shutil.which('llamafile')
         if path_executable:
+            self.logger.debug(f"Found llamafile in PATH: {path_executable}")
             return path_executable
+        self.logger.debug("llamafile not found in PATH")
+
+        # Search in LLAMAFILE_PATH environment variable
+        env_executable = os.environ.get('LLAMAFILE_PATH')
+        if env_executable:
+            self.logger.debug(f"Checking LLAMAFILE_PATH: {env_executable}")
+            if os.path.isfile(env_executable):
+                self.logger.debug(f"Using llamafile from LLAMAFILE_PATH: {env_executable}")
+                return env_executable
+            else:
+                self.logger.warning(f"LLAMAFILE_PATH set but file not found: {env_executable}")
+        else:
+            self.logger.debug("LLAMAFILE_PATH environment variable not set")
 
         # Search in current directory
-        current_dir_executable = os.path.join(os.getcwd(), 'llamafile')
+        current_dir = os.getcwd()
+        self.logger.debug(f"Searching for llamafile in current directory: {current_dir}")
+        current_dir_executable = os.path.join(current_dir, 'llamafile')
         if os.path.isfile(current_dir_executable):
+            self.logger.debug(f"Using llamafile from current directory: {current_dir_executable}")
             return current_dir_executable
+        self.logger.debug("llamafile not found in current directory")
 
-        # Search in LLAMAFILE environment variable
-        env_executable = os.environ.get('LLAMAFILE')
-        if env_executable and os.path.isfile(env_executable):
-            return env_executable
-
-        self.logger.error("Llamafile executable not found in PATH, current directory, or LLAMAFILE environment variable.")
+        self.logger.error("Llamafile executable not found in PATH, current directory, or LLAMAFILE_PATH environment variable.")
         raise FileNotFoundError("Llamafile executable not found.")
 
     def start_llamafile(self, daemon=False):
@@ -265,14 +284,18 @@ def main():
     parser.add_argument("--service", action="store_true", help="Run llamafile as a service")
     parser.add_argument("--stop", action="store_true", help="Stop the running llamafile service")
     parser.add_argument("--status", action="store_true", help="Check if the llamafile service is running")
+    parser.add_argument("-l", "--llamafile", metavar="LLAMAFILE_PATH", help="Path to the llamafile executable")
     parser.add_argument("files", nargs="*", help="Files to summarize")
     args = parser.parse_args()
 
     configure_logging(args.debug)
     logger = logging.getLogger(__name__)
 
+    # Print LLAMAFILE_PATH for debugging
+    logger.debug(f"LLAMAFILE_PATH environment variable: {os.environ.get('LLAMAFILE_PATH')}")
+
     try:
-        client = LlamafileClient()
+        client = LlamafileClient(executable_path=args.llamafile)
 
         if args.stop:
             client.stop_llamafile()
