@@ -7,6 +7,7 @@ import logging
 import http.client
 import sys
 import shutil
+import psutil
 
 # Add the parent directory to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,6 +16,23 @@ from sumarai import LlamafileClient
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+def kill_llamafile_processes():
+    for proc in psutil.process_iter(['name']):
+        if 'llamafile' in proc.info['name'].lower():
+            logger.warning(f"Found running llamafile process with PID {proc.pid}. Terminating...")
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except psutil.TimeoutExpired:
+                logger.warning(f"Process {proc.pid} did not terminate. Killing...")
+                proc.kill()
+
+@pytest.fixture(autouse=True)
+def ensure_no_llamafile_running():
+    kill_llamafile_processes()
+    yield
+    kill_llamafile_processes()
 
 @pytest.fixture
 def client():
@@ -146,7 +164,7 @@ class TestLlamafileClientNonMocked:
         logger.info(f"\nInitializing LlamafileClient with executable: {executable_path}")
         try:
             client.start_llamafile()
-            logger.info("Llamafile process started successfully")
+            logger.info(f"Llamafile process started successfully with API key: {client.api_key}")
             yield client
         finally:
             client.stop_llamafile()
@@ -161,6 +179,28 @@ class TestLlamafileClientNonMocked:
         logger.info(f"Input messages:\n{json.dumps(messages, indent=2)}")
 
         try:
+            # Ensure the API key is set
+            assert non_mocked_client.api_key, "API key is not set"
+            logger.info(f"Using API key: {non_mocked_client.api_key}")
+
+            # Print debug information
+            logger.info(f"Host: {non_mocked_client.host}")
+            logger.info(f"Port: {non_mocked_client.port}")
+            logger.info(f"Executable path: {non_mocked_client.executable_path}")
+
+            # Print request details
+            headers = {"Content-Type": "application/json"}
+            if non_mocked_client.api_key:
+                headers["Authorization"] = f"Bearer {non_mocked_client.api_key}"
+            logger.info(f"Request headers: {headers}")
+
+            data = json.dumps({
+                "model": "local-model",
+                "messages": messages,
+                "stream": False
+            })
+            logger.info(f"Request body: {data}")
+
             response = non_mocked_client.chat_completion(messages)
             logger.info(f"Output response:\n{json.dumps(response, indent=2)}")
             assert "choices" in response

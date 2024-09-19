@@ -11,6 +11,30 @@ import shutil
 import secrets
 import sys
 import signal
+import re
+
+def clean_content(content):
+    """
+    Removes specific tags from the content.
+
+    Args:
+        content (str): The original content containing tags.
+
+    Returns:
+        str: The cleaned content without the specified tags.
+    """
+    # Define the patterns for tags you want to remove
+    tags_to_remove = [
+        r'<\|eot_id\|>',       # Specific tag to remove
+        # Add more tags here as needed, e.g., r'<\|another_tag\|>'
+    ]
+
+    # Iterate over each tag pattern and remove it from the content
+    for tag in tags_to_remove:
+        content = re.sub(tag, '', content)
+
+    return content
+
 
 
 def configure_logging(debug_enabled):
@@ -344,8 +368,10 @@ def interactive_shell(client, prompt):
                                     delta = data['choices'][0].get('delta', {})
                                     if 'content' in delta:
                                         content = delta['content']
-                                        ai_response += content
-                                        print(content, end="", flush=True)
+                                        # Clean the content before printing and appending
+                                        cleaned_content = clean_content(content)
+                                        ai_response += cleaned_content
+                                        print(cleaned_content, end="", flush=True)
                                     if data['choices'][0].get('finish_reason') is not None:
                                         print()  # New line after the response
                                         break
@@ -354,6 +380,7 @@ def interactive_shell(client, prompt):
                         # Incomplete JSON, keep in buffer
                         continue
 
+            # Append the cleaned AI response to the conversation history
             conversation_history.append({"role": "assistant", "content": ai_response})
 
         except KeyboardInterrupt:
@@ -361,6 +388,7 @@ def interactive_shell(client, prompt):
             break
         except Exception as e:
             print(f"An error occurred: {str(e)}")
+
 
 
 def main():
@@ -419,7 +447,10 @@ def main():
                 messages = [{"role": "user", "content": f"{args.prompt}\n\n{content}"}]
                 response = client.chat_completion(messages)
                 content_response = response.get("choices", [])[0].get("message", {}).get("content", "No content in response")
-                print(content_response)
+                
+                # Clean the content before printing
+                cleaned_content = clean_content(content_response)
+                print(cleaned_content)
     except FileNotFoundError as e:
         logger.error(f"Error: {str(e)}")
         print(f"Error: {str(e)}")
@@ -431,6 +462,7 @@ def main():
     finally:
         if 'client' in locals() and not args.service and not args.stop and client.process:
             client.stop_llamafile()
+
 
 
 if __name__ == "__main__":

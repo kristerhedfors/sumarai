@@ -20,8 +20,11 @@ def llamafile_service():
     print(f"Service start stdout: {start_result.stdout}")
     print(f"Service start stderr: {start_result.stderr}")
 
-    # Wait a moment to ensure the service starts
-    time.sleep(2)
+    # Ensure no error during start
+    assert start_result.returncode == 0, "Failed to start the llamafile service"
+    
+    # Wait a little longer to ensure the service starts properly
+    time.sleep(10)  # Increase sleep time if necessary
 
     yield
 
@@ -32,11 +35,12 @@ def llamafile_service():
     print(f"Service stop stdout: {stop_result.stdout}")
     print(f"Service stop stderr: {stop_result.stderr}")
 
-    # Ensure that the PID file and API key file are removed
+    # Ensure the PID file and API key file are removed
     if os.path.exists(PID_FILE):
         os.remove(PID_FILE)
     if os.path.exists(API_KEY_FILE):
         os.remove(API_KEY_FILE)
+
 
 
 def test_start_llamafile_service(llamafile_service):
@@ -74,7 +78,7 @@ def test_stop_llamafile_service():
     print(f"Service start stderr: {start_result.stderr}")
 
     # Wait a moment to ensure the service starts
-    time.sleep(2)
+    time.sleep(5)
 
     # Stop the service
     stop_result = subprocess.run(
@@ -82,6 +86,9 @@ def test_stop_llamafile_service():
     )
     print(f"Service stop stdout: {stop_result.stdout}")
     print(f"Service stop stderr: {stop_result.stderr}")
+
+    # Wait for the service to fully stop
+    time.sleep(5)
 
     # Check that the PID file and API key file are removed
     assert not os.path.exists(PID_FILE), "PID file was not removed after stopping service"
