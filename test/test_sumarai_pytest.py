@@ -138,11 +138,10 @@ def test_invalid_api_key(mock_http_connection, client):
     assert "Error: 401" in str(context.value)
     assert "Unauthorized" in str(context.value)
 
-@pytest.mark.skip(reason="This test requires a running llamafile process")
 class TestLlamafileClientNonMocked:
     @pytest.fixture(scope="class")
     def non_mocked_client(self):
-        executable_path = "./llamafile/Phi-3-mini-128k-instruct-Q4_K_M.llamafile"
+        executable_path = "./Phi-3-mini-128k-instruct-Q4_K_M.llamafile"
         client = LlamafileClient(executable_path)
         logger.info(f"\nInitializing LlamafileClient with executable: {executable_path}")
         try:
