@@ -10,6 +10,7 @@ import http.client
 import shutil
 import secrets
 import sys
+import signal
 
 
 def configure_logging(debug_enabled):
@@ -18,22 +19,34 @@ def configure_logging(debug_enabled):
 
 
 class LlamafileClient:
-    def __init__(self, executable_path=None, api_key=None, host="localhost", port=8080):
+    LLAMAFILE_DIR = os.path.join(os.path.expanduser("~"), ".llamafile")
+    PID_FILE = os.path.join(LLAMAFILE_DIR, "llamafile.pid")
+    API_KEY_FILE = os.path.join(LLAMAFILE_DIR, "api_key")
+
+    def __init__(self, executable_path=None, api_key=None, host="localhost", port=8080, service_mode=False):
         self.logger = logging.getLogger(__name__)
         self.executable_path = self._find_executable(executable_path)
-        self.api_key = api_key if api_key else secrets.token_hex(16)
+        self.service_mode = service_mode
+
         self.host = host
         self.port = port
         self.process = None
+
+        if api_key:
+            self.api_key = api_key
+        elif os.path.exists(self.API_KEY_FILE):
+            with open(self.API_KEY_FILE, 'r') as f:
+                self.api_key = f.read().strip()
+        else:
+            self.api_key = secrets.token_hex(16)
 
     def _find_executable(self, executable_path):
         self.logger.debug("Starting search for llamafile executable")
         self.logger.debug(f"LLAMAFILE environment variable: {os.environ.get('LLAMAFILE')}")
         self.logger.debug(f"LLAMAFILE_PATH environment variable: {os.environ.get('LLAMAFILE_PATH')}")
-        
+
         if executable_path:
             self.logger.debug(f"Checking specified executable path: {executable_path}")
-            # Convert relative path to absolute path
             abs_path = os.path.abspath(executable_path)
             self.logger.debug(f"Absolute path: {abs_path}")
             if os.path.isfile(abs_path) and os.access(abs_path, os.X_OK):
@@ -41,7 +54,6 @@ class LlamafileClient:
                 return abs_path
             raise FileNotFoundError(f"Specified executable path {abs_path} not found or not executable.")
 
-        # Search in PATH
         self.logger.debug("Searching for llamafile in PATH")
         path_executable = shutil.which('llamafile')
         if path_executable:
@@ -49,7 +61,6 @@ class LlamafileClient:
             return path_executable
         self.logger.debug("llamafile not found in PATH")
 
-        # Search in LLAMAFILE environment variable
         env_executable = os.environ.get('LLAMAFILE')
         if env_executable:
             self.logger.debug(f"Checking LLAMAFILE: {env_executable}")
@@ -62,7 +73,6 @@ class LlamafileClient:
         else:
             self.logger.debug("LLAMAFILE environment variable not set")
 
-        # Search in LLAMAFILE_PATH environment variable
         env_executable = os.environ.get('LLAMAFILE_PATH')
         if env_executable:
             self.logger.debug(f"Checking LLAMAFILE_PATH: {env_executable}")
@@ -75,7 +85,6 @@ class LlamafileClient:
         else:
             self.logger.debug("LLAMAFILE_PATH environment variable not set")
 
-        # Search in current directory
         current_dir = os.getcwd()
         self.logger.debug(f"Searching for llamafile in current directory: {current_dir}")
         current_dir_executable = os.path.join(current_dir, 'llamafile')
@@ -90,10 +99,23 @@ class LlamafileClient:
     def start_llamafile(self, daemon=False):
         if not self.executable_path:
             raise FileNotFoundError("Llamafile executable not found.")
+
+        # Check if the service is already running
+        if os.path.exists(self.PID_FILE):
+            with open(self.PID_FILE, 'r') as f:
+                pid = int(f.read())
+            try:
+                os.kill(pid, 0)  # Check if process is running
+                self.logger.info("Llamafile service is already running with pid %d", pid)
+                return
+            except OSError:
+                self.logger.warning("Stale pid-file found. Removing it.")
+                os.remove(self.PID_FILE)
+
         cmd = f"{self.executable_path} --api-key {self.api_key}"
         self.logger.debug(f"Starting llamafile with command: {cmd}")
         try:
-            if daemon:
+            if daemon and self.service_mode:
                 self._start_daemon(cmd)
             else:
                 self.process = subprocess.Popen(
@@ -112,6 +134,11 @@ class LlamafileClient:
             raise
 
     def _start_daemon(self, cmd):
+        # Create the LLAMAFILE_DIR if it doesn't exist
+        if self.service_mode:
+            if not os.path.exists(self.LLAMAFILE_DIR):
+                os.makedirs(self.LLAMAFILE_DIR, exist_ok=True)
+
         pid = os.fork()
         if pid > 0:
             os._exit(0)  # Exit first parent
@@ -133,6 +160,7 @@ class LlamafileClient:
             os.dup2(f.fileno(), sys.stdout.fileno())
             os.dup2(f.fileno(), sys.stderr.fileno())
 
+        # Start the process
         self.process = subprocess.Popen(
             cmd,
             shell=True,
@@ -140,7 +168,28 @@ class LlamafileClient:
             stderr=subprocess.PIPE,
             text=True
         )
+
+        if self.service_mode:
+            # Write the pid-file
+            with open(self.PID_FILE, 'w') as f:
+                f.write(str(self.process.pid))
+
+            # Write the API key file with mode 0600
+            with open(self.API_KEY_FILE, 'w') as f:
+                f.write(self.api_key)
+            os.chmod(self.API_KEY_FILE, 0o600)
+
         self.logger.debug("Daemon process started")
+
+        # Wait for the process to exit
+        self.process.wait()
+
+        # Clean up the pid-file and API key file
+        if self.service_mode:
+            if os.path.exists(self.PID_FILE):
+                os.remove(self.PID_FILE)
+            if os.path.exists(self.API_KEY_FILE):
+                os.remove(self.API_KEY_FILE)
 
     def _wait_for_server(self, timeout=60, check_interval=1):
         start_time = time.time()
@@ -161,7 +210,7 @@ class LlamafileClient:
                 except Exception:
                     pass
 
-            if self.process.poll() is not None:
+            if self.process and self.process.poll() is not None:
                 stdout, stderr = self.process.communicate()
                 self.logger.error(f"Llamafile process exited unexpectedly. Exit code: {self.process.returncode}")
                 self.logger.error(f"stdout: {stdout}")
@@ -182,6 +231,23 @@ class LlamafileClient:
                 self.logger.warning("Llamafile process did not terminate, forcing kill")
                 self.process.kill()
             self.logger.debug("Llamafile process stopped")
+        else:
+            if os.path.exists(self.PID_FILE):
+                with open(self.PID_FILE, 'r') as f:
+                    pid = int(f.read())
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    self.logger.debug("Sent SIGTERM to process with pid %d", pid)
+                except ProcessLookupError:
+                    self.logger.warning("Process with pid %d not found", pid)
+                # Remove pid-file and API key file
+                if self.service_mode:
+                    if os.path.exists(self.PID_FILE):
+                        os.remove(self.PID_FILE)
+                    if os.path.exists(self.API_KEY_FILE):
+                        os.remove(self.API_KEY_FILE)
+            else:
+                self.logger.warning("Pid-file not found. Is the service running?")
 
     def chat_completion(self, messages, model="local-model", stream=False):
         headers = {"Content-Type": "application/json"}
@@ -315,7 +381,7 @@ def main():
     logger.debug(f"LLAMAFILE_PATH environment variable: {os.environ.get('LLAMAFILE_PATH')}")
 
     try:
-        client = LlamafileClient(executable_path=args.llamafile)
+        client = LlamafileClient(executable_path=args.llamafile, service_mode=args.service or args.stop)
 
         if args.stop:
             client.stop_llamafile()
@@ -331,12 +397,22 @@ def main():
             logger.info("Llamafile running as a service")
             return
 
-        if not args.files:
-            client.start_llamafile()
-            interactive_shell(client, args.prompt)
-        else:
+        # Check if the service is running before starting a new instance
+        try:
+            conn = http.client.HTTPConnection("localhost", 8080)
+            conn.request("GET", "/v1/models")
+            response = conn.getresponse()
+            if response.status == 200:
+                logger.info("Using running llamafile service")
+            else:
+                raise Exception("Service not running")
+        except Exception:
+            logger.info("Starting new llamafile instance")
             client.start_llamafile()
 
+        if not args.files:
+            interactive_shell(client, args.prompt)
+        else:
             for file in args.files:
                 with open(file, 'r') as f:
                     content = f.read()
@@ -353,8 +429,9 @@ def main():
         print(f"An error occurred: {str(e)}")
         sys.exit(1)  # Exit with error code 1
     finally:
-        if 'client' in locals() and not args.service:
+        if 'client' in locals() and not args.service and not args.stop and client.process:
             client.stop_llamafile()
+
 
 if __name__ == "__main__":
     main()
