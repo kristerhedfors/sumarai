@@ -97,18 +97,18 @@ def test_main_nonexistent_llamafile(mock_parse_args, mock_get_logger, mock_exit)
     mock_args.status = False
     mock_args.service = False
     mock_args.files = []
+    mock_args.ollama_model = None  # Explicitly set to None to ensure Llamafile Mode
     mock_parse_args.return_value = mock_args
 
     # Mocking logger
     mock_logger = MagicMock()
     mock_get_logger.return_value = mock_logger
 
-    # Call the main function
-    main()
+    # Ensure OLLAMA_MODEL environment variable is not set
+    with patch.dict(os.environ, {"OLLAMA_MODEL": ""}):
+        # Call the main function
+        main()
 
     # Assert that the error was logged and the program exited
     mock_logger.error.assert_called_with("Error: Specified executable path /nonexistent/path/to/llamafile not found or not executable.")
     mock_exit.assert_called_with(1)
-
-if __name__ == '__main__':
-    pytest.main()

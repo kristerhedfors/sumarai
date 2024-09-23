@@ -36,13 +36,20 @@ def clean_content(content):
     return content
 
 
-
 def configure_logging(debug_enabled):
     level = logging.DEBUG if debug_enabled else logging.INFO
     logging.basicConfig(level=level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
-class LlamafileClient:
+class APIClient:
+    """
+    Abstract base class for API clients.
+    """
+    def chat_completion(self, messages, stream=False):
+        raise NotImplementedError("Subclasses should implement this method.")
+
+
+class LlamafileClient(APIClient):
     LLAMAFILE_DIR = os.path.join(os.path.expanduser("~"), ".llamafile")
     PID_FILE = os.path.join(LLAMAFILE_DIR, "llamafile.pid")
     API_KEY_FILE = os.path.join(LLAMAFILE_DIR, "api_key")
@@ -273,13 +280,16 @@ class LlamafileClient:
             else:
                 self.logger.warning("Pid-file not found. Is the service running?")
 
-    def chat_completion(self, messages, model="local-model", stream=False):
+    def chat_completion(self, messages, model=None, stream=False):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
+        # Use the provided model or fallback to the client's model
+        selected_model = model if model else "local-model"
+
         data = json.dumps({
-            "model": model,
+            "model": selected_model,
             "messages": messages,
             "stream": stream
         }).encode('utf-8')
@@ -294,7 +304,8 @@ class LlamafileClient:
             response = conn.getresponse()
 
             if response.status != 200:
-                raise Exception(f"Error: {response.status}, {response.read().decode('utf-8')}")
+                error_response = response.read().decode('utf-8')
+                raise Exception(f"Error: {response.status}, {error_response}")
 
             if stream:
                 return response
@@ -311,6 +322,89 @@ class LlamafileClient:
                 conn.close()
 
 
+class OllamaClient(APIClient):
+    def __init__(self, model, host="localhost", port=11434):  # Updated port
+        self.logger = logging.getLogger(__name__)
+        self.model = model
+        self.host = host
+        self.port = port
+
+    def _check_model_exists(self):
+        """
+        Check if the specified model exists in the Ollama service's model registry.
+        """
+        self.logger.debug(f"Checking if model '{self.model}' exists in Ollama service")
+        try:
+            conn = http.client.HTTPConnection(self.host, self.port)
+            conn.request("GET", "/v1/models")
+            response = conn.getresponse()
+
+            if response.status != 200:
+                raise Exception(f"Failed to retrieve models. Status: {response.status}")
+
+            data = json.loads(response.read())
+            models = data.get("data", [])  # Updated key from 'models' to 'data'
+
+            # Log the entire response for debugging
+            self.logger.debug(f"Full response from /v1/models: {data}")
+
+            # Extract model IDs
+            if isinstance(models, list):
+                model_names = [model.get("id") for model in models if "id" in model]
+                self.logger.debug(f"Extracted model names: {model_names}")
+
+                if self.model not in model_names:
+                    raise ValueError(f"Model '{self.model}' does not exist in Ollama service.")
+            else:
+                self.logger.error("Unexpected format for models data.")
+                raise Exception("Unexpected format for models data.")
+
+            self.logger.debug(f"Model '{self.model}' exists in Ollama service")
+        except Exception as e:
+            self.logger.error(f"Error checking model existence: {str(e)}")
+            raise
+        finally:
+            conn.close()
+
+    def chat_completion(self, messages, stream=False):
+        headers = {"Content-Type": "application/json"}
+
+        data = json.dumps({
+            "model": self.model,
+            "messages": messages,
+            "stream": stream
+        }).encode('utf-8')
+
+        self.logger.debug(f"Sending chat completion request to {self.host}:{self.port}/v1/chat/completions")
+        self.logger.debug(f"Request headers: {headers}")
+        self.logger.debug(f"Request body: {data}")
+
+        try:
+            conn = http.client.HTTPConnection(self.host, self.port)
+            conn.request("POST", "/v1/chat/completions", body=data, headers=headers)
+            response = conn.getresponse()
+
+            if response.status != 200:
+                error_response = response.read().decode('utf-8')
+                raise Exception(f"Error: {response.status}, {error_response}")
+
+            if stream:
+                return response
+            else:
+                response_data = response.read().decode('utf-8')
+                self.logger.debug(f"Response status: {response.status}")
+                self.logger.debug(f"Response body: {response_data}")
+                return json.loads(response_data)
+        except Exception as e:
+            self.logger.error(f"Error in chat completion request: {str(e)}")
+            raise
+        finally:
+            if not stream:
+                conn.close()
+
+
+
+
 def check_server_status():
     try:
         conn = http.client.HTTPConnection("localhost", 8080)
@@ -322,9 +416,14 @@ def check_server_status():
             print("not running")
     except Exception as e:
         print("not running")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
-def interactive_shell(client, prompt):
+def interactive_shell(client, prompt, model=None):
     print("Welcome to the interactive shell. Type 'help' for available commands or 'exit' to quit.")
     conversation_history = [
         {"role": "system", "content": prompt}
@@ -390,15 +489,15 @@ def interactive_shell(client, prompt):
             print(f"An error occurred: {str(e)}")
 
 
-
 def main():
-    parser = argparse.ArgumentParser(description="Llamafile API Client")
+    parser = argparse.ArgumentParser(description="API Client for Llamafile or Ollama Service")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
     parser.add_argument("-p", "--prompt", help="Custom prompt for summarization", default="You are a helpful AI assistant. Respond to the user's queries concisely and accurately.")
     parser.add_argument("--service", action="store_true", help="Run llamafile as a service")
     parser.add_argument("--stop", action="store_true", help="Stop the running llamafile service")
     parser.add_argument("--status", action="store_true", help="Check if the llamafile service is running")
     parser.add_argument("-l", "--llamafile", metavar="LLAMAFILE_PATH", help="Path to the llamafile executable")
+    parser.add_argument("--ollama-model", metavar="MODEL_NAME", help="Specify the Ollama model to use")
     parser.add_argument("files", nargs="*", help="Files to summarize")
     args = parser.parse_args()
 
@@ -408,61 +507,118 @@ def main():
     # Print LLAMAFILE_PATH for debugging
     logger.debug(f"LLAMAFILE_PATH environment variable: {os.environ.get('LLAMAFILE_PATH')}")
 
+    # Determine the model: command-line argument overrides environment variable
+    model = args.ollama_model or os.environ.get("OLLAMA_MODEL")
+
     try:
-        client = LlamafileClient(executable_path=args.llamafile, service_mode=args.service or args.stop)
+        if model:
+            # Ollama Mode
+            logger.debug("Operating in Ollama mode")
+            client = OllamaClient(model=model)
 
-        if args.stop:
-            client.stop_llamafile()
-            logger.info("Llamafile service stopped")
-            return
+            # Check if Ollama service is running and model exists
+            client._check_model_exists()
 
-        if args.status:
-            check_server_status()
-            return
+            if args.stop or args.service:
+                logger.error("The '--service' and '--stop' options are not applicable in Ollama mode.")
+                print("Error: '--service' and '--stop' options are not applicable when using Ollama model.")
+                sys.exit(1)
 
-        if args.service:
-            client.start_llamafile(daemon=True)
-            logger.info("Llamafile running as a service")
-            return
+            if args.status:
+                # Check if Ollama service is running
+                try:
+                    conn = http.client.HTTPConnection("localhost", 8080, timeout=5)
+                    conn.request("GET", "/v1/models")
+                    response = conn.getresponse()
+                    if response.status == 200:
+                        print("running")
+                    else:
+                        print("not running")
+                except Exception:
+                    print("not running")
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                return
 
-        # Check if the service is running before starting a new instance
-        try:
-            conn = http.client.HTTPConnection("localhost", 8080)
-            conn.request("GET", "/v1/models")
-            response = conn.getresponse()
-            if response.status == 200:
-                logger.info("Using running llamafile service")
+            # No service management in Ollama mode
+
+            if not args.files:
+                interactive_shell(client, args.prompt, model=model)
             else:
-                raise Exception("Service not running")
-        except Exception:
-            logger.info("Starting new llamafile instance")
-            client.start_llamafile()
-
-        if not args.files:
-            interactive_shell(client, args.prompt)
+                for file in args.files:
+                    with open(file, 'r') as f:
+                        content = f.read()
+                    messages = [{"role": "user", "content": f"{args.prompt}\n\n{content}"}]
+                    response = client.chat_completion(messages, stream=False)
+                    content_response = response.get("choices", [])[0].get("message", {}).get("content", "No content in response")
+                    
+                    # Clean the content before printing
+                    cleaned_content = clean_content(content_response)
+                    print(cleaned_content)
         else:
-            for file in args.files:
-                with open(file, 'r') as f:
-                    content = f.read()
-                messages = [{"role": "user", "content": f"{args.prompt}\n\n{content}"}]
-                response = client.chat_completion(messages)
-                content_response = response.get("choices", [])[0].get("message", {}).get("content", "No content in response")
-                
-                # Clean the content before printing
-                cleaned_content = clean_content(content_response)
-                print(cleaned_content)
+            # Llamafile Mode
+            logger.debug("Operating in Llamafile mode")
+            client = LlamafileClient(executable_path=args.llamafile, service_mode=args.service or args.stop)
+
+            if args.stop:
+                client.stop_llamafile()
+                logger.info("Llamafile service stopped")
+                return
+
+            if args.status:
+                check_server_status()
+                return
+
+            if args.service:
+                client.start_llamafile(daemon=True)
+                logger.info("Llamafile running as a service")
+                return
+
+            # Check if the service is running before starting a new instance
+            try:
+                conn = http.client.HTTPConnection("localhost", 8080)
+                conn.request("GET", "/v1/models")
+                response = conn.getresponse()
+                if response.status == 200:
+                    logger.info("Using running llamafile service")
+                else:
+                    raise Exception("Service not running")
+            except Exception:
+                logger.info("Starting new llamafile instance")
+                client.start_llamafile()
+
+            if not args.files:
+                interactive_shell(client, args.prompt)
+            else:
+                for file in args.files:
+                    with open(file, 'r') as f:
+                        content = f.read()
+                    messages = [{"role": "user", "content": f"{args.prompt}\n\n{content}"}]
+                    response = client.chat_completion(messages)
+                    content_response = response.get("choices", [])[0].get("message", {}).get("content", "No content in response")
+                    
+                    # Clean the content before printing
+                    cleaned_content = clean_content(content_response)
+                    print(cleaned_content)
     except FileNotFoundError as e:
         logger.error(f"Error: {str(e)}")
         print(f"Error: {str(e)}")
         sys.exit(1)  # Exit with error code 1
+    except ValueError as e:
+        logger.error(f"Error: {str(e)}")
+        print(f"Error: {str(e)}")
+        sys.exit(1)
     except Exception as e:
         logger.exception("An error occurred")
         print(f"An error occurred: {str(e)}")
         sys.exit(1)  # Exit with error code 1
     finally:
-        if 'client' in locals() and not args.service and not args.stop and client.process:
-            client.stop_llamafile()
-
+        if 'client' in locals():
+            if isinstance(client, LlamafileClient) and not args.service and not args.stop and client.process:
+                client.stop_llamafile()
 
 
 if __name__ == "__main__":
