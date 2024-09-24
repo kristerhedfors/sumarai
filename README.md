@@ -18,49 +18,49 @@ This project employs a unique development methodology:
 
 4. **AI-Driven Problem Solving**: Complex programming challenges are solved by leveraging the AI's vast knowledge of programming patterns, best practices, and problem-solving techniques.
 
-5. **Multi-Language Implementation**: The project demonstrates the ability to generate equivalent implementations in multiple programming languages (Python and Go) using the same AI-assisted approach.
-
-This methodology demonstrates the potential of AI-assisted development in dramatically reducing the time and technical expertise required to create functional applications across different programming languages.
+This methodology demonstrates the potential of AI-assisted development in dramatically reducing the time and technical expertise required to create functional applications.
 
 ## Key Features
 
 1. **Rapid LLM Application Development**: Demonstrates the ease and speed of developing LLM applications with AI assistance.
-2. **llamafile Showcase**: Highlights the capabilities of llamafile, an LLM packaging solution that enables:
+2. **llamafile Integration**: Highlights the capabilities of llamafile, an LLM packaging solution that enables:
    - Inference at competitive token rates using consumer hardware
    - Completion of meaningful tasks in isolated environments
    - Enhanced information security for sensitive applications
-3. **Zero-Dependencies Philosophy**: The project adheres to the llamafile zero-dependencies approach, using only the standard libraries for all functionality in both Python and Go implementations.
-4. **Flexible Executable Discovery**: Automatically locates the llamafile executable using a smart search algorithm.
-5. **Interactive Shell**: Provides an interactive chat interface for real-time communication with the AI model.
-6. **Multi-Language Support**: Offers equivalent implementations in Python and Go, showcasing the versatility of the AI-assisted development approach.
+3. **Ollama Integration**: Supports using Ollama models as an alternative to llamafile.
+4. **Zero-Dependencies Philosophy**: The project adheres to using only the standard Python library for all functionality.
+5. **Flexible Executable Discovery**: Automatically locates the llamafile executable using a smart search algorithm.
+6. **Interactive Shell**: Provides an interactive chat interface for real-time communication with the AI model.
+7. **File Summarization**: Ability to summarize content from multiple files.
+8. **Custom Prompts**: Allows users to specify custom prompts for summarization tasks.
+9. **Service Mode**: Option to run llamafile as a background service.
+10. **Debugging Support**: Includes a debug mode for detailed logging.
 
 ## Technology Stack
 
 - **IDE**: Visual Studio Code
 - **AI Assistant**: Claude Dev plugin (Anthropic)
-- **Local LLM**: llamafile APIs
-- **Programming Languages**: 
-  - Python (standard library only)
-  - Go (standard library only)
+- **Local LLM**: llamafile APIs or Ollama
+- **Programming Language**: Python (standard library only)
 - **Additional Tools**: Various shell commands for file and content manipulation
 
 ## Zero-Dependencies Approach
 
-The `sumarai` project, including both `sumarai.py` and `sumarai.go`, has been implemented using only the standard libraries of their respective languages. This approach aligns with the llamafile philosophy of minimizing external dependencies, resulting in:
+The `sumarai` project has been implemented using only the standard library of Python. This approach aligns with the llamafile philosophy of minimizing external dependencies, resulting in:
 
 - Improved portability across different environments
 - Reduced security risks associated with third-party libraries
 - Simplified deployment and maintenance
 
-By using only built-in modules, we ensure that the client can run on any system with standard Python or Go installations, without the need for additional package management or potential compatibility issues.
+By using only built-in modules, we ensure that the client can run on any system with a standard Python installation, without the need for additional package management or potential compatibility issues.
 
 ## Getting Started
 
 ### Prerequisites
 
-- Python 3.6 or higher (for Python version)
-- Go 1.16 or higher (for Go version)
+- Python 3.6 or higher
 - llamafile executable (can be placed in PATH, current directory, or specified via LLAMAFILE_PATH environment variable)
+- Alternatively, Ollama installed and running (if using Ollama mode)
 
 ### Installation
 
@@ -70,7 +70,7 @@ By using only built-in modules, we ensure that the client can run on any system 
    cd sumarai
    ```
 
-2. Download and set up the llamafile:
+2. If using llamafile, download and set up the llamafile:
    ```
    wget https://huggingface.co/Mozilla/Meta-Llama-3.1-8B-Instruct-llamafile/resolve/main/Meta-Llama-3.1-8B-Instruct.Q6_K.llamafile
    mv Meta-Llama-3.1-8B-Instruct.Q6_K.llamafile llamafile
@@ -82,9 +82,11 @@ By using only built-in modules, we ensure that the client can run on any system 
    - Keep it in the current working directory
    - Set the LLAMAFILE_PATH environment variable to point to its location
 
+4. If using Ollama, ensure it's installed and running on your system.
+
 ### Usage
 
-There are two main ways to use the sumarai application (both Python and Go versions follow the same usage pattern):
+There are two main ways to use the sumarai application:
 
 1. **Interactive Shell Mode:**
 
@@ -92,10 +94,6 @@ There are two main ways to use the sumarai application (both Python and Go versi
 
    ```
    python sumarai.py
-   ```
-   or
-   ```
-   go run sumarai.go
    ```
 
    This will launch an interactive chat interface where you can communicate with the AI model in real-time. Available commands in the interactive shell:
@@ -110,43 +108,35 @@ There are two main ways to use the sumarai application (both Python and Go versi
    ```
    python sumarai.py file1.txt file2.txt
    ```
-   or
-   ```
-   go run sumarai.go file1.txt file2.txt
-   ```
 
    You can also specify a custom prompt for summarization:
 
    ```
    python sumarai.py --prompt "Provide a detailed analysis of:" file.txt
    ```
-   or
-   ```
-   go run sumarai.go --prompt "Provide a detailed analysis of:" file.txt
-   ```
 
 Additional options:
 
 - `--debug`: Enable debug output
-- `--service`: Run llamafile as a service
-- `--stop`: Stop the running llamafile service
-- `--status`: Check if the llamafile service is running
+- `--service`: Run llamafile as a service (llamafile mode only)
+- `--stop`: Stop the running llamafile service (llamafile mode only)
+- `--status`: Check if the llamafile service is running (llamafile mode only)
+- `--llamafile LLAMAFILE_PATH`: Specify the path to the llamafile executable
+- `--ollama-model MODEL_NAME`: Specify the Ollama model to use (Ollama mode)
 
-If you want to specify a custom path for the llamafile executable:
+To use Ollama instead of llamafile, specify the Ollama model:
 
 ```
-python sumarai.py --executable /path/to/llamafile [other options]
+python sumarai.py --ollama-model MODEL_NAME [other options]
 ```
-or
-```
-go run sumarai.go --executable /path/to/llamafile [other options]
-```
+
+You can also set the OLLAMA_MODEL environment variable to specify the Ollama model.
 
 ## Llamafile Executable Search Order
 
-The `sumarai` project uses a smart search algorithm to locate the llamafile executable. The search order is as follows:
+When using llamafile mode, the `sumarai` project uses a smart search algorithm to locate the llamafile executable. The search order is as follows:
 
-1. User-specified path (if provided via the --executable argument)
+1. User-specified path (if provided via the --llamafile argument)
 2. System PATH
 3. Current working directory
 4. LLAMAFILE_PATH environment variable
@@ -162,13 +152,11 @@ The `sumarai` project is particularly useful for:
 3. Researchers studying the capabilities and limitations of AI-driven software development
 4. Projects requiring secure, isolated LLM solutions with minimal dependencies
 5. Users who want to interact with an AI model through a simple command-line interface
-6. Developers interested in comparing equivalent implementations across different programming languages (Python and Go)
+6. Developers interested in comparing local LLM solutions (llamafile vs Ollama)
 
 ## Running Tests
 
-### Python Tests
-
-The Python version of `sumarai` uses pytest for testing. To run the tests, follow these steps:
+The `sumarai` project uses pytest for testing. To run the tests, follow these steps:
 
 1. Ensure you have pytest installed. If not, you can install it using pip:
    ```
@@ -204,19 +192,16 @@ The Python version of `sumarai` uses pytest for testing. To run the tests, follo
 
 Please note that some tests may require a running llamafile process. These tests are marked with `@pytest.mark.skip(reason="This test requires a running llamafile process")` and will be skipped by default. To run these tests, ensure you have a llamafile process running and remove the skip decorator.
 
-### Go Tests
-
-(To be implemented: Add information about running Go tests once they are created)
-
 ## Future Development
 
 This project serves as a starting point for further exploration and development in the field of AI-assisted, no-code LLM applications. We welcome contributions and ideas to expand its capabilities and use cases while maintaining the zero-dependencies philosophy and the no-code development approach. Some potential areas for future development include:
 
-1. Implementing equivalent functionality in other programming languages
-2. Enhancing the interactive shell with more features
-3. Improving error handling and edge case management
-4. Developing a graphical user interface (GUI) version of the application
-5. Extending the summarization capabilities to handle more file formats and larger datasets
+1. Enhancing the interactive shell with more features
+2. Improving error handling and edge case management
+3. Developing a graphical user interface (GUI) version of the application
+4. Extending the summarization capabilities to handle more file formats and larger datasets
+5. Integrating with other local LLM solutions
+6. Implementing more advanced NLP tasks beyond summarization
 
 ## License
 
