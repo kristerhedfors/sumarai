@@ -12,6 +12,7 @@ import secrets
 import sys
 import signal
 import re
+from urllib.parse import urlparse
 
 def clean_content(content):
     """
@@ -50,6 +51,70 @@ class APIClient:
 
     def get_info(self):
         raise NotImplementedError("Subclasses should implement this method.")
+
+
+class OpenAIClient(APIClient):
+    """
+    Client for OpenAI's Chat Completion API.
+    """
+    def __init__(self, api_key, model):
+        self.logger = logging.getLogger(__name__)
+        self.api_key = api_key
+        self.model = model
+        self.api_url = "https://api.openai.com/v1/chat/completions"
+
+    def chat_completion(self, messages, stream=False):
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+
+        data = {
+            "model": self.model,
+            "messages": messages,
+            "stream": stream
+        }
+
+        body = json.dumps(data)
+
+        parsed_url = urlparse(self.api_url)
+        conn = http.client.HTTPSConnection(parsed_url.hostname, parsed_url.port or 443, timeout=60)
+
+        self.logger.debug(f"Sending chat completion request to {self.api_url}")
+        self.logger.debug(f"Request headers: {headers}")
+        self.logger.debug(f"Request body: {body}")
+
+        try:
+            conn.request("POST", parsed_url.path, body=body, headers=headers)
+            response = conn.getresponse()
+
+            if response.status != 200:
+                error_response = response.read().decode('utf-8')
+                raise Exception(f"Error: {response.status}, {error_response}")
+
+            if stream:
+                return response
+            else:
+                response_data = response.read().decode('utf-8')
+                self.logger.debug(f"Response status: {response.status}")
+                self.logger.debug(f"Response body: {response_data}")
+                return json.loads(response_data)
+        except Exception as e:
+            self.logger.error(f"Error in OpenAI chat completion request: {str(e)}")
+            raise
+        finally:
+            if not stream:
+                conn.close()
+
+    def get_info(self):
+        # OpenAI API does not have a direct endpoint for model info in this context.
+        # We'll return basic info.
+        return {
+            "api_type": "OpenAI",
+            "model": self.model,
+            "status": "Available",
+            "api_url": self.api_url
+        }
 
 
 class LlamafileClient(APIClient):
@@ -229,7 +294,7 @@ class LlamafileClient(APIClient):
         start_time = time.time()
         while time.time() - start_time < timeout:
             try:
-                conn = http.client.HTTPConnection(self.host, self.port)
+                conn = http.client.HTTPConnection(self.host, self.port, timeout=5)
                 conn.request("GET", "/v1/models")
                 response = conn.getresponse()
                 if response.status == 200:
@@ -302,7 +367,7 @@ class LlamafileClient(APIClient):
         self.logger.debug(f"Request body: {data}")
 
         try:
-            conn = http.client.HTTPConnection(self.host, self.port)
+            conn = http.client.HTTPConnection(self.host, self.port, timeout=60)
             conn.request("POST", "/v1/chat/completions", body=data, headers=headers)
             response = conn.getresponse()
 
@@ -326,7 +391,7 @@ class LlamafileClient(APIClient):
 
     def get_info(self):
         try:
-            conn = http.client.HTTPConnection(self.host, self.port)
+            conn = http.client.HTTPConnection(self.host, self.port, timeout=5)
             conn.request("GET", "/v1/models")
             response = conn.getresponse()
             if response.status == 200:
@@ -376,7 +441,7 @@ class OllamaClient(APIClient):
         """
         self.logger.debug(f"Checking if model '{self.model}' exists in Ollama service")
         try:
-            conn = http.client.HTTPConnection(self.host, self.port)
+            conn = http.client.HTTPConnection(self.host, self.port, timeout=5)
             conn.request("GET", "/v1/models")
             response = conn.getresponse()
 
@@ -421,7 +486,7 @@ class OllamaClient(APIClient):
         self.logger.debug(f"Request body: {data}")
 
         try:
-            conn = http.client.HTTPConnection(self.host, self.port)
+            conn = http.client.HTTPConnection(self.host, self.port, timeout=60)
             conn.request("POST", "/v1/chat/completions", body=data, headers=headers)
             response = conn.getresponse()
 
@@ -445,7 +510,7 @@ class OllamaClient(APIClient):
 
     def get_info(self):
         try:
-            conn = http.client.HTTPConnection(self.host, self.port)
+            conn = http.client.HTTPConnection(self.host, self.port, timeout=5)
             conn.request("GET", "/v1/models")
             response = conn.getresponse()
             if response.status == 200:
@@ -485,7 +550,7 @@ class OllamaClient(APIClient):
 
 def check_server_status():
     try:
-        conn = http.client.HTTPConnection("localhost", 8080)
+        conn = http.client.HTTPConnection("localhost", 8080, timeout=5)
         conn.request("GET", "/v1/models")
         response = conn.getresponse()
         if response.status == 200:
@@ -541,13 +606,19 @@ def interactive_shell(client, prompt, model=None):
             buffer = ""
             ai_response = ""
             for line in response:
-                buffer += line.decode('utf-8')
+                if isinstance(line, bytes):
+                    line = line.decode('utf-8')
+                buffer += line
                 if buffer.endswith('\n'):
                     try:
                         chunks = buffer.split('\n')
                         for chunk in chunks:
                             if chunk.startswith('data: '):
-                                data = json.loads(chunk[6:])
+                                data_str = chunk[6:]
+                                if data_str == '[DONE]':
+                                    print()  # New line after the response
+                                    break
+                                data = json.loads(data_str)
                                 if 'choices' in data and len(data['choices']) > 0:
                                     delta = data['choices'][0].get('delta', {})
                                     if 'content' in delta:
@@ -575,7 +646,7 @@ def interactive_shell(client, prompt, model=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="API Client for Llamafile or Ollama Service")
+    parser = argparse.ArgumentParser(description="API Client for Llamafile, Ollama, or OpenAI Service")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
     parser.add_argument("-p", "--prompt", help="Custom prompt for summarization", default="You are a helpful AI assistant. Respond to the user's queries concisely and accurately.")
     parser.add_argument("--service", action="store_true", help="Run llamafile as a service")
@@ -583,6 +654,7 @@ def main():
     parser.add_argument("--status", action="store_true", help="Check if the llamafile service is running")
     parser.add_argument("-l", "--llamafile", metavar="LLAMAFILE_PATH", help="Path to the llamafile executable")
     parser.add_argument("--ollama-model", metavar="MODEL_NAME", help="Specify the Ollama model to use")
+    parser.add_argument("--openai-model", metavar="MODEL_NAME", help="Specify the OpenAI model to use")
     parser.add_argument("files", nargs="*", help="Files to summarize")
     args = parser.parse_args()
 
@@ -592,28 +664,39 @@ def main():
     # Print LLAMAFILE_PATH for debugging
     logger.debug(f"LLAMAFILE_PATH environment variable: {os.environ.get('LLAMAFILE_PATH')}")
 
-    # Determine the model: command-line argument overrides environment variable
-    model = args.ollama_model or os.environ.get("OLLAMA_MODEL")
+    # Determine the OpenAI model: command-line argument overrides environment variable
+    openai_model = args.openai_model or os.environ.get("OPENAI_MODEL")
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+
+    # Determine the Ollama model: command-line argument overrides environment variable
+    ollama_model = args.ollama_model or os.environ.get("OLLAMA_MODEL")
 
     try:
-        if model:
-            # Ollama Mode
-            logger.debug("Operating in Ollama mode")
-            client = OllamaClient(model=model)
+        if openai_api_key and openai_model:
+            # OpenAI Mode
+            logger.debug("Operating in OpenAI mode")
+            client = OpenAIClient(api_key=openai_api_key, model=openai_model)
 
-            # Check if Ollama service is running and model exists
-            client._check_model_exists()
-
+            # Handle service-related arguments which are not applicable in OpenAI mode
             if args.stop or args.service:
-                logger.error("The '--service' and '--stop' options are not applicable in Ollama mode.")
-                print("Error: '--service' and '--stop' options are not applicable when using Ollama model.")
+                logger.error("The '--service' and '--stop' options are not applicable in OpenAI mode.")
+                print("Error: '--service' and '--stop' options are not applicable when using OpenAI API.")
                 sys.exit(1)
 
             if args.status:
-                # Check if Ollama service is running
+                # OpenAI does not have a status endpoint; we'll attempt a simple request
                 try:
-                    conn = http.client.HTTPConnection("localhost", 8080, timeout=5)
-                    conn.request("GET", "/v1/models")
+                    conn = http.client.HTTPSConnection("api.openai.com", 443, timeout=5)
+                    headers = {
+                        "Authorization": f"Bearer {openai_api_key}",
+                        "Content-Type": "application/json"
+                    }
+                    test_data = json.dumps({
+                        "model": openai_model,
+                        "messages": [{"role": "system", "content": "Test"}],
+                        "max_tokens": 1
+                    })
+                    conn.request("POST", "/v1/chat/completions", body=test_data, headers=headers)
                     response = conn.getresponse()
                     if response.status == 200:
                         print("running")
@@ -628,10 +711,8 @@ def main():
                         pass
                 return
 
-            # No service management in Ollama mode
-
             if not args.files:
-                interactive_shell(client, args.prompt, model=model)
+                interactive_shell(client, args.prompt, model=openai_model)
             else:
                 # Read from stdin if '-' is among the files
                 stdin_content = None
@@ -651,6 +732,64 @@ def main():
                             content = f.read()
                     messages = [{"role": "user", "content": f"{args.prompt}\n\n{content}"}]
                     response = client.chat_completion(messages, stream=False)
+                    content_response = response.get("choices", [])[0].get("message", {}).get("content", "No content in response")
+                    
+                    # Clean the content before printing
+                    cleaned_content = clean_content(content_response)
+                    print(cleaned_content)
+        elif ollama_model:
+            # Ollama Mode
+            logger.debug("Operating in Ollama mode")
+            client = OllamaClient(model=ollama_model)
+
+            # Check if Ollama service is running and model exists
+            client._check_model_exists()
+
+            if args.stop or args.service:
+                logger.error("The '--service' and '--stop' options are not applicable in Ollama mode.")
+                print("Error: '--service' and '--stop' options are not applicable when using Ollama model.")
+                sys.exit(1)
+
+            if args.status:
+                # Check if Ollama service is running
+                try:
+                    conn = http.client.HTTPConnection("localhost", 11434, timeout=5)
+                    conn.request("GET", "/v1/models")
+                    response = conn.getresponse()
+                    if response.status == 200:
+                        print("running")
+                    else:
+                        print("not running")
+                except Exception:
+                    print("not running")
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                return
+
+            if not args.files:
+                interactive_shell(client, args.prompt, model=ollama_model)
+            else:
+                # Read from stdin if '-' is among the files
+                stdin_content = None
+                if '-' in args.files:
+                    if len(args.files) > 1:
+                        logger.error("When using '-', no other file names should be provided.")
+                        print("Error: When using '-', no other file names should be provided.")
+                        sys.exit(1)
+                    logger.debug("Reading content from stdin")
+                    stdin_content = sys.stdin.read()
+
+                for file in args.files:
+                    if file == '-':
+                        content = stdin_content
+                    else:
+                        with open(file, 'r') as f:
+                            content = f.read()
+                    messages = [{"role": "user", "content": f"{args.prompt}\n\n{content}"}]
+                    response = client.chat_completion(messages)
                     content_response = response.get("choices", [])[0].get("message", {}).get("content", "No content in response")
                     
                     # Clean the content before printing
@@ -677,7 +816,7 @@ def main():
 
             # Check if the service is running before starting a new instance
             try:
-                conn = http.client.HTTPConnection("localhost", 8080)
+                conn = http.client.HTTPConnection("localhost", 8080, timeout=5)
                 conn.request("GET", "/v1/models")
                 response = conn.getresponse()
                 if response.status == 200:
