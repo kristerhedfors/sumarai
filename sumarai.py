@@ -48,6 +48,9 @@ class APIClient:
     def chat_completion(self, messages, stream=False):
         raise NotImplementedError("Subclasses should implement this method.")
 
+    def get_info(self):
+        raise NotImplementedError("Subclasses should implement this method.")
+
 
 class LlamafileClient(APIClient):
     LLAMAFILE_DIR = os.path.join(os.path.expanduser("~"), ".llamafile")
@@ -321,6 +324,44 @@ class LlamafileClient(APIClient):
             if not stream:
                 conn.close()
 
+    def get_info(self):
+        try:
+            conn = http.client.HTTPConnection(self.host, self.port)
+            conn.request("GET", "/v1/models")
+            response = conn.getresponse()
+            if response.status == 200:
+                data = json.loads(response.read().decode('utf-8'))
+                model_info = data.get('data', [{}])[0]
+                return {
+                    "api_type": "Llamafile",
+                    "model": model_info.get('id', 'Unknown'),
+                    "status": "Running",
+                    "executable_path": self.executable_path,
+                    "host": self.host,
+                    "port": self.port
+                }
+            else:
+                return {
+                    "api_type": "Llamafile",
+                    "status": "Not Running",
+                    "executable_path": self.executable_path,
+                    "host": self.host,
+                    "port": self.port
+                }
+        except Exception as e:
+            return {
+                "api_type": "Llamafile",
+                "status": f"Error: {str(e)}",
+                "executable_path": self.executable_path,
+                "host": self.host,
+                "port": self.port
+            }
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
 
 class OllamaClient(APIClient):
     def __init__(self, model, host="localhost", port=11434):  # Updated port
@@ -402,6 +443,45 @@ class OllamaClient(APIClient):
             if not stream:
                 conn.close()
 
+    def get_info(self):
+        try:
+            conn = http.client.HTTPConnection(self.host, self.port)
+            conn.request("GET", "/v1/models")
+            response = conn.getresponse()
+            if response.status == 200:
+                data = json.loads(response.read().decode('utf-8'))
+                models = data.get('data', [])
+                current_model = next((model for model in models if model.get('id') == self.model), None)
+                return {
+                    "api_type": "Ollama",
+                    "model": self.model,
+                    "status": "Running",
+                    "host": self.host,
+                    "port": self.port,
+                    "model_details": current_model
+                }
+            else:
+                return {
+                    "api_type": "Ollama",
+                    "model": self.model,
+                    "status": "Not Running",
+                    "host": self.host,
+                    "port": self.port
+                }
+        except Exception as e:
+            return {
+                "api_type": "Ollama",
+                "model": self.model,
+                "status": f"Error: {str(e)}",
+                "host": self.host,
+                "port": self.port
+            }
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
 
 def check_server_status():
     try:
@@ -431,6 +511,7 @@ def interactive_shell(client, prompt, model=None):
         print("Available commands:")
         print("  help    - Show this help message")
         print("  clear   - Clear the conversation history")
+        print("  info    - Show information about the current API and model")
         print("  exit    - Exit the interactive shell")
 
     while True:
@@ -445,6 +526,12 @@ def interactive_shell(client, prompt, model=None):
             elif user_input.lower() == 'clear':
                 conversation_history = [conversation_history[0]]  # Keep only the system message
                 print("Conversation history cleared.")
+                continue
+            elif user_input.lower() == 'info':
+                info = client.get_info()
+                print("API Information:")
+                for key, value in info.items():
+                    print(f"  {key}: {value}")
                 continue
 
             conversation_history.append({"role": "user", "content": user_input})

@@ -35,6 +35,7 @@ This methodology demonstrates the potential of AI-assisted development in dramat
 8. **Custom Prompts**: Allows users to specify custom prompts for summarization tasks.
 9. **Service Mode**: Option to run llamafile as a background service.
 10. **Debugging Support**: Includes a debug mode for detailed logging.
+11. **API Information**: Ability to display current API and model information in the interactive shell.
 
 ## Technology Stack
 
@@ -99,6 +100,7 @@ There are two main ways to use the sumarai application:
    This will launch an interactive chat interface where you can communicate with the AI model in real-time. Available commands in the interactive shell:
    - `help`: Show available commands
    - `clear`: Clear the conversation history
+   - `info`: Display information about the current API and model
    - `exit`: Exit the interactive shell
 
 2. **File Summarization Mode:**
