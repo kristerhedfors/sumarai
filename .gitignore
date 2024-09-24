@@ -23,6 +23,7 @@ wheels/
 # Environments
 .env
 .venv
+lab
 env/
 venv/
 ENV/

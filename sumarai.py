@@ -403,8 +403,6 @@ class OllamaClient(APIClient):
                 conn.close()
 
 
-
-
 def check_server_status():
     try:
         conn = http.client.HTTPConnection("localhost", 8080)
@@ -548,9 +546,22 @@ def main():
             if not args.files:
                 interactive_shell(client, args.prompt, model=model)
             else:
+                # Read from stdin if '-' is among the files
+                stdin_content = None
+                if '-' in args.files:
+                    if len(args.files) > 1:
+                        logger.error("When using '-', no other file names should be provided.")
+                        print("Error: When using '-', no other file names should be provided.")
+                        sys.exit(1)
+                    logger.debug("Reading content from stdin")
+                    stdin_content = sys.stdin.read()
+
                 for file in args.files:
-                    with open(file, 'r') as f:
-                        content = f.read()
+                    if file == '-':
+                        content = stdin_content
+                    else:
+                        with open(file, 'r') as f:
+                            content = f.read()
                     messages = [{"role": "user", "content": f"{args.prompt}\n\n{content}"}]
                     response = client.chat_completion(messages, stream=False)
                     content_response = response.get("choices", [])[0].get("message", {}).get("content", "No content in response")
@@ -593,9 +604,22 @@ def main():
             if not args.files:
                 interactive_shell(client, args.prompt)
             else:
+                # Read from stdin if '-' is among the files
+                stdin_content = None
+                if '-' in args.files:
+                    if len(args.files) > 1:
+                        logger.error("When using '-', no other file names should be provided.")
+                        print("Error: When using '-', no other file names should be provided.")
+                        sys.exit(1)
+                    logger.debug("Reading content from stdin")
+                    stdin_content = sys.stdin.read()
+
                 for file in args.files:
-                    with open(file, 'r') as f:
-                        content = f.read()
+                    if file == '-':
+                        content = stdin_content
+                    else:
+                        with open(file, 'r') as f:
+                            content = f.read()
                     messages = [{"role": "user", "content": f"{args.prompt}\n\n{content}"}]
                     response = client.chat_completion(messages)
                     content_response = response.get("choices", [])[0].get("message", {}).get("content", "No content in response")
